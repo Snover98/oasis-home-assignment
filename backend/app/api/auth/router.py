@@ -111,7 +111,7 @@ async def jira_auth_callback(
         )
         
         if current_user.username in USERS_DB:
-            USERS_DB[current_user.username]["jira_config"] = jira_config.model_dump()
+            USERS_DB[current_user.username].jira_config = jira_config
             return {"status": "success", "site_name": jira_resource["name"]}
             
     raise HTTPException(status_code=404, detail="User not found")

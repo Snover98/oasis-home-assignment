@@ -40,6 +40,9 @@ class User(BaseModel):
     email: str
     jira_config: JiraConfig | None = None
 
+class UserInDB(User):
+    password_hash: str
+
 class Token(BaseModel):
     access_token: str
     token_type: str

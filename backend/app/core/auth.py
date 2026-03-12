@@ -2,24 +2,24 @@ import jwt
 from datetime import datetime, timedelta, timezone
 from fastapi import Depends, HTTPException, status
 from fastapi.security import OAuth2PasswordBearer
-from app.models.models import TokenData, User, JiraConfig
+from app.models.models import TokenData, User, UserInDB
 from app.core.security import verify_password
 from typing import Any
 
 # In-memory user store for demonstration
-USERS_DB = {
-    "testuser": {
-        "username": "testuser",
-        "email": "test@example.com",
-        "password_hash": "$2b$12$MAaylIRAuacc/pfH.cuEoO7NV57ru17Yjs1xo2CPEiOujauO238l2", # 'password'
-        "jira_config": None
-    },
-    "testuser2": {
-        "username": "testuser2",
-        "email": "test2@example.com",
-        "password_hash": "$2b$12$HcznasTTRG6YHJS7wN8WvO7G60tuPKEPcp8jCq5PL8UhEgzxmbgHC", # 'notpass'
-        "jira_config": None
-    }
+USERS_DB: dict[str, UserInDB] = {
+    "testuser": UserInDB(
+        username="testuser",
+        email="test@example.com",
+        password_hash="$2b$12$MAaylIRAuacc/pfH.cuEoO7NV57ru17Yjs1xo2CPEiOujauO238l2", # 'password'
+        jira_config=None
+    ),
+    "testuser2": UserInDB(
+        username="testuser2",
+        email="test2@example.com",
+        password_hash="$2b$12$HcznasTTRG6YHJS7wN8WvO7G60tuPKEPcp8jCq5PL8UhEgzxmbgHC", # 'notpass'
+        jira_config=None
+    )
 }
 
 SECRET_KEY = "supersecretkey"
@@ -35,15 +35,15 @@ def authenticate_user(username: str, password: str) -> User | bool:
     :param password: The password.
     :return: User object if authenticated, False otherwise.
     """
-    user_dict = USERS_DB.get(username)
-    if not user_dict:
+    user = USERS_DB.get(username)
+    if not user:
         return False
-    if not verify_password(password, user_dict["password_hash"]):
+    if not verify_password(password, user.password_hash):
         return False
     return User(
-        username=user_dict["username"], 
-        email=user_dict["email"], 
-        jira_config=JiraConfig(**user_dict["jira_config"]) if user_dict.get("jira_config") else None
+        username=user.username, 
+        email=user.email, 
+        jira_config=user.jira_config
     )
 
 def create_access_token(data: dict[str, Any], expires_delta: timedelta | None = None) -> str:
@@ -83,10 +83,8 @@ async def get_current_user(token: str = Depends(oauth2_scheme)) -> User:
     except jwt.PyJWTError:
         raise credentials_exception
     
-    user_dict = USERS_DB.get(token_data.username) if token_data.username else None
-    if user_dict is None:
+    user = USERS_DB.get(token_data.username) if token_data.username else None
+    if user is None:
         raise credentials_exception
     
-    # Construct User object
-    jira_config = JiraConfig(**user_dict["jira_config"]) if user_dict.get("jira_config") else None
-    return User(username=user_dict["username"], email=user_dict["email"], jira_config=jira_config)
+    return User(username=user.username, email=user.email, jira_config=user.jira_config)
