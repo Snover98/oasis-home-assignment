@@ -1,4 +1,4 @@
-from fastapi import APIRouter, Depends, HTTPException, status
+from fastapi import APIRouter, Depends, HTTPException
 from typing import Any
 
 from app.models.models import User, Project, Ticket, TicketCreate, FindingCreate
