@@ -27,15 +27,15 @@ async def perform_blog_digest(current_user: User, project_key: str) -> dict[str,
         dict[str, Any]: Details of the created Jira ticket.
 
     Raises:
-        Exception: If Jira is not connected, scraping fails, or no projects are found.
+        HTTPException: If Jira is not connected, scraping fails, or the ticket creation fails.
     """
     if not current_user.jira_config:
-        raise Exception("Jira configuration is missing for this user")
+        raise HTTPException(status_code=400, detail="Jira configuration is missing for this user")
 
     scraper = BlogScraper()
     latest_post = await scraper.get_latest_post()
     if not latest_post:
-        raise Exception("Failed to fetch the latest blog post from Oasis website")
+        raise HTTPException(status_code=500, detail="Failed to fetch the latest blog post from Oasis website")
 
     ai_service = AISummaryService()
     summary = await ai_service.summarize_blog_post(latest_post["title"], latest_post["content"])
