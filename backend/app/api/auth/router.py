@@ -59,7 +59,7 @@ async def login_for_access_token(form_data: OAuth2PasswordRequestForm = Depends(
         HTTPException: If authentication fails.
     """
     user = authenticate_user(form_data.username, form_data.password)
-    if not user:
+    if user is None:
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
             detail="Incorrect username or password",
@@ -125,8 +125,11 @@ async def jira_auth_callback(
         dict[str, str]: A success message and the name of the connected site.
 
     Raises:
-        HTTPException: If token exchange fails or no Jira sites are accessible.
+        HTTPException: If token exchange fails or no Jira sites are accessible or user does not exist
     """
+    if current_user.username not in USERS_DB:
+        raise HTTPException(status_code=404, detail=f"User {current_user.username} not found")
+
     # 1. Exchange code for access token
     auth_client = AtlassianAuthClient(base_url="https://auth.atlassian.com")
     try:
@@ -137,19 +140,18 @@ async def jira_auth_callback(
             redirect_uri=settings.JIRA_REDIRECT_URI
         )
         token_data = await auth_client.exchange_token(json=exchange_request)
+    except HTTPException as e:
+        raise e
     except Exception as e:
         raise HTTPException(status_code=400, detail=f"Failed to exchange token: {str(e)}")
     
-    access_token = token_data.access_token
-    refresh_token = token_data.refresh_token
-
     # 2. Fetch accessible resources (cloud_id)
     api_client = AtlassianAPIClient(
         base_url="https://api.atlassian.com",
-        headers={"Authorization": f"Bearer {access_token}"}
+        headers={"Authorization": f"Bearer {token_data.access_token}"}
     )
-    resources = await api_client.get_accessible_resources()
     
+    resources = await api_client.get_accessible_resources()
     if not resources:
         raise HTTPException(status_code=400, detail="No accessible Jira resources found")
     
@@ -160,15 +162,10 @@ async def jira_auth_callback(
     )
     
     # 3. Store the Jira configuration in the user's database record
-    jira_config = JiraConfig(
-        access_token=access_token,
-        refresh_token=refresh_token,
+    USERS_DB[current_user.username].jira_config = JiraConfig(
+        access_token=token_data.access_token,
+        refresh_token=token_data.refresh_token,
         cloud_id=jira_resource.id,
         site_url=jira_resource.url
     )
-    
-    if current_user.username in USERS_DB:
-        USERS_DB[current_user.username].jira_config = jira_config
-        return {"status": "success", "site_name": jira_resource.name}
-            
-    raise HTTPException(status_code=404, detail="User not found")
+    return {"status": "success", "site_name": jira_resource.name}

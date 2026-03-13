@@ -6,6 +6,7 @@ This module handles scraping the Oasis Security website to retrieve the latest b
 from bs4 import BeautifulSoup
 from pydantic_client import get
 from pydantic_client.async_client import HttpxWebClient
+from fastapi import HTTPException
 
 class OasisBlogClient(HttpxWebClient):
     """
@@ -30,6 +31,9 @@ class BlogScraper:
         Returns:
             dict[str, str] | None: A dictionary containing 'title', 'url', and 'content' 
                                    if successful, None otherwise.
+        
+        Raises:
+            HTTPException: If the blog post fetch fails, or the scraping fails
         """
         client = OasisBlogClient(base_url=self.URL)
         try:
@@ -59,6 +63,9 @@ class BlogScraper:
                 }
             
             return None
+        except HTTPException as e:
+            print(f"Error fetching blog page: {e}")
+            raise e
         except Exception as e:
             print(f"Error scraping blog: {e}")
             return None

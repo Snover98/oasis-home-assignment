@@ -35,7 +35,7 @@ ACCESS_TOKEN_EXPIRE_MINUTES = 60
 # OAuth2 scheme for token retrieval
 oauth2_scheme = OAuth2PasswordBearer(tokenUrl="token")
 
-def authenticate_user(username: str, password: str) -> User | bool:
+def authenticate_user(username: str, password: str) -> User | None:
     """
     Authenticates a user based on username and password.
 
@@ -44,13 +44,12 @@ def authenticate_user(username: str, password: str) -> User | bool:
         password (str): The user's plain-text password.
 
     Returns:
-        User | bool: Returns a User model if authentication is successful, False otherwise.
+        User | None: Returns a User model if authentication is successful, None otherwise.
     """
     user = USERS_DB.get(username)
-    if not user:
-        return False
-    if not verify_password(password, user.password_hash):
-        return False
+    if user is None or not verify_password(password, user.password_hash):
+        return None
+    
     return User(
         username=user.username, 
         email=user.email, 

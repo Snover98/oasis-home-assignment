@@ -50,7 +50,7 @@ class JiraService:
         self.cloud_id = config.cloud_id
         # The base URL for 3LO Jira requests includes the cloud_id
         self.base_api_url = f"https://api.atlassian.com/ex/jira/{self.cloud_id}"
-        self.site_url = config.site_url or ""
+        self.site_url = config.site_url or "https://atlassian.net"
  
         self.api = JiraAPIClient(
             base_url=self.base_api_url,
@@ -129,18 +129,16 @@ class JiraService:
             fields=["summary", "created", "status", "priority", "issuetype"]
         ))
         
-        issues = data.issues
-
         return [
             Ticket(
                 id=issue.id,
                 key=issue.key,
-                self=f"{self.site_url}/browse/{issue.key}" if self.site_url else f"https://atlassian.net/browse/{issue.key}",
+                self=f"{self.site_url}/browse/{issue.key}",
                 summary=issue.fields.summary,
                 status=issue.fields.status.name,
                 priority=self.issue_priority(issue.fields.priority),
                 issuetype=issue.fields.issuetype.name,
                 created=issue.fields.created
             )
-            for issue in issues
+            for issue in data.issues
         ]
