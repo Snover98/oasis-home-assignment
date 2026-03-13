@@ -1,8 +1,14 @@
+"""
+Core authentication and authorization module for the Oasis NHI Ticket System.
+This module handles JWT token generation, user authentication, and dependency injection
+for retrieving the current authenticated user.
+"""
+
 import jwt
 from datetime import datetime, timedelta, timezone
 from fastapi import Depends, HTTPException, status
 from fastapi.security import OAuth2PasswordBearer
-from app.models.models import TokenData, User, UserInDB
+from app.models.models import User, UserInDB
 from app.core.security import verify_password
 from typing import Any
 
@@ -26,14 +32,19 @@ SECRET_KEY = "supersecretkey"
 ALGORITHM = "HS256"
 ACCESS_TOKEN_EXPIRE_MINUTES = 60
 
+# OAuth2 scheme for token retrieval
 oauth2_scheme = OAuth2PasswordBearer(tokenUrl="token")
 
 def authenticate_user(username: str, password: str) -> User | bool:
     """
     Authenticates a user based on username and password.
-    :param username: The username.
-    :param password: The password.
-    :return: User object if authenticated, False otherwise.
+
+    Args:
+        username (str): The user's username.
+        password (str): The user's plain-text password.
+
+    Returns:
+        User | bool: Returns a User model if authentication is successful, False otherwise.
     """
     user = USERS_DB.get(username)
     if not user:
@@ -48,43 +59,62 @@ def authenticate_user(username: str, password: str) -> User | bool:
 
 def create_access_token(data: dict[str, Any], expires_delta: timedelta | None = None) -> str:
     """
-    Creates a JWT access token.
-    :param data: Data to encode in the token.
-    :param expires_delta: Optional expiration time delta.
-    :return: The encoded JWT token.
+    Creates a JWT access token for a user.
+
+    Args:
+        data (dict[str, Any]): Data to be encoded into the JWT (claims).
+        expires_delta (timedelta | None): Optional expiration time delta. 
+                                          Defaults to ACCESS_TOKEN_EXPIRE_MINUTES.
+
+    Returns:
+        str: The encoded JWT access token.
     """
+    if expires_delta is None:
+        expires_delta = timedelta(minutes=ACCESS_TOKEN_EXPIRE_MINUTES)
+    
+    expire = datetime.now(timezone.utc) + expires_delta
+
     to_encode = data.copy()
-    if expires_delta:
-        expire = datetime.now(timezone.utc) + expires_delta
-    else:
-        expire = datetime.now(timezone.utc) + timedelta(minutes=15)
     to_encode.update({"exp": expire})
+
     encoded_jwt = jwt.encode(to_encode, SECRET_KEY, algorithm=ALGORITHM)
     return encoded_jwt
 
-async def get_current_user(token: str = Depends(oauth2_scheme)) -> User:
-    """
-    Retrieves the current user from the JWT token.
-    :param token: The JWT token.
-    :return: The authenticated User.
-    :raises HTTPException: If token is invalid or user not found.
-    """
-    credentials_exception = HTTPException(
+def __credentials_exception(reason: str = '') -> HTTPException:
+    detail = "Could not validate credentials"
+    if reason:
+        detail = f"{detail}: {reason}"
+    
+    return HTTPException(
         status_code=status.HTTP_401_UNAUTHORIZED,
-        detail="Could not validate credentials",
+        detail=detail,
         headers={"WWW-Authenticate": "Bearer"},
     )
+
+async def get_current_user(token: str = Depends(oauth2_scheme)) -> User:
+    """
+    Dependency injection function to retrieve the currently authenticated user
+    from a JWT token.
+
+    Args:
+        token (str): The JWT access token from the request header.
+
+    Returns:
+        User: The authenticated User model.
+
+    Raises:
+        HTTPException: If the token is invalid or the user is not found.
+    """
     try:
         payload = jwt.decode(token, SECRET_KEY, algorithms=[ALGORITHM])
         username: str | None = payload.get("sub")
         if username is None:
-            raise credentials_exception
-        token_data = TokenData(username=username)
-    except jwt.PyJWTError:
-        raise credentials_exception
+            raise __credentials_exception(reason="Invalid username in payload")
+    except jwt.PyJWTError as e:
+        raise __credentials_exception(reason=str(e))
     
-    user = USERS_DB.get(token_data.username) if token_data.username else None
+    user = USERS_DB.get(username)
     if user is None:
-        raise credentials_exception
+        raise __credentials_exception(reason=f"User {username} not found")
     
     return User(username=user.username, email=user.email, jira_config=user.jira_config)

@@ -1,3 +1,8 @@
+"""
+API Router for automated and manual background jobs in the Oasis NHI Ticket System.
+Currently handles the NHI Blog Digest job.
+"""
+
 from fastapi import APIRouter, Depends, HTTPException
 from typing import Any
 
@@ -11,8 +16,18 @@ router = APIRouter(tags=["jobs"])
 
 async def perform_blog_digest(current_user: User, project_key: str) -> dict[str, Any]:
     """
-    Logic to fetch blog posts, summarize them, and create a Jira ticket.
-    Raises exceptions on failure.
+    Core logic for the blog digest job: scrapes the latest blog post,
+    summarizes it with AI, and creates a Jira ticket.
+
+    Args:
+        current_user (User): The user performing the action.
+        project_key (str): The Jira project where the ticket should be created.
+
+    Returns:
+        dict[str, Any]: Details of the created Jira ticket.
+
+    Raises:
+        Exception: If Jira is not connected, scraping fails, or no projects are found.
     """
     if not current_user.jira_config:
         raise Exception("Jira configuration is missing for this user")
@@ -22,10 +37,10 @@ async def perform_blog_digest(current_user: User, project_key: str) -> dict[str,
     if not latest_post:
         raise Exception("Failed to fetch the latest blog post from Oasis website")
 
-    jira_service = JiraService(current_user.jira_config)
     ai_service = AISummaryService()
     summary = await ai_service.summarize_blog_post(latest_post["title"], latest_post["content"])
 
+    jira_service = JiraService(current_user.jira_config)
     return await jira_service.create_ticket(
         project_key=project_key,
         summary=f"Blog Digest: {latest_post['title']}",
@@ -38,10 +53,22 @@ async def trigger_blog_digest(
     current_user: User = Depends(get_current_user)
 ) -> dict[str, Any]:
     """
-    Manually triggers the blog digest job for a specific project.
+    Manual trigger for the NHI Blog Digest job.
+
+    Args:
+        request (BlogDigestRequest): Request body containing the target project key.
+        current_user (User): The authenticated user (from dependency).
+
+    Returns:
+        dict[str, Any]: Success status and the created ticket details.
+
+    Raises:
+        HTTPException: If the job execution fails.
     """
     try:
         result = await perform_blog_digest(current_user, request.project_key)
         return {"status": "success", "ticket": result}
+    except HTTPException as e:
+        raise e
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))

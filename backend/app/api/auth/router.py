@@ -1,3 +1,8 @@
+"""
+API Router for authentication and user-related endpoints in the Oasis NHI Ticket System.
+Handles JWT token generation, user profile retrieval, and Atlassian OAuth 2.0 flow.
+"""
+
 import urllib.parse
 from fastapi import APIRouter, Depends, HTTPException, status
 from fastapi.security import OAuth2PasswordRequestForm
@@ -22,17 +27,36 @@ from app.core.auth import (
 router = APIRouter()
 
 class AtlassianAuthClient(HttpxWebClient):
+    """
+    Declarative client for Atlassian's OAuth 2.0 token endpoints.
+    """
     @post("/oauth/token")
-    async def exchange_token(self, json: AtlassianTokenExchangeRequest) -> AtlassianTokenResponse: ...
+    async def exchange_token(self, json: AtlassianTokenExchangeRequest) -> AtlassianTokenResponse: 
+        """Exchanges an authorization code for access and refresh tokens."""
+        ...
 
 class AtlassianAPIClient(HttpxWebClient):
+    """
+    Declarative client for Atlassian's accessible-resources endpoint.
+    """
     @get("/oauth/token/accessible-resources")
-    async def get_accessible_resources(self) -> list[AtlassianResourceResponse]: ...
+    async def get_accessible_resources(self) -> list[AtlassianResourceResponse]: 
+        """Retrieves the list of Jira sites accessible with the current access token."""
+        ...
 
 @router.post("/token", response_model=Token, tags=["auth"])
 async def login_for_access_token(form_data: OAuth2PasswordRequestForm = Depends()) -> dict[str, str]:
     """
-    Login endpoint to obtain a JWT access token.
+    Login endpoint to obtain a JWT access token using username and password.
+
+    Args:
+        form_data (OAuth2PasswordRequestForm): Standard OAuth2 form containing 'username' and 'password'.
+
+    Returns:
+        dict[str, str]: The generated JWT access token and token type.
+
+    Raises:
+        HTTPException: If authentication fails.
     """
     user = authenticate_user(form_data.username, form_data.password)
     if not user:
@@ -51,14 +75,26 @@ async def login_for_access_token(form_data: OAuth2PasswordRequestForm = Depends(
 @router.get("/api/v1/users/me", response_model=User, tags=["users"])
 async def read_users_me(current_user: User = Depends(get_current_user)) -> User:
     """
-    Returns the currently authenticated user's profile.
+    Returns the profile of the currently authenticated user.
+
+    Args:
+        current_user (User): The authenticated user (from dependency).
+
+    Returns:
+        User: The user profile including any existing Jira configuration.
     """
     return current_user
 
 @router.get("/api/v1/jira/auth/url", tags=["jira-auth"])
 async def get_jira_auth_url(current_user: User = Depends(get_current_user)) -> dict[str, str]:
     """
-    Generates the Atlassian OAuth 2.0 authorization URL.
+    Generates the Atlassian OAuth 2.0 authorization URL for the user to initiate the connection.
+
+    Args:
+        current_user (User): The authenticated user (from dependency).
+
+    Returns:
+        dict[str, str]: The URL to which the frontend should redirect the user.
     """
     params = {
         "audience": "api.atlassian.com",
@@ -78,8 +114,18 @@ async def jira_auth_callback(
     current_user: User = Depends(get_current_user)
 ) -> dict[str, str]:
     """
-    Handles the redirect from Atlassian, exchanges the code for tokens,
-    and fetches the accessible Jira resources (sites).
+    OAuth 2.0 callback endpoint. Exchanges the authorization code for tokens,
+    identifies the accessible Jira site, and stores the configuration for the user.
+
+    Args:
+        code (str): The authorization code returned by Atlassian.
+        current_user (User): The authenticated user (from dependency).
+
+    Returns:
+        dict[str, str]: A success message and the name of the connected site.
+
+    Raises:
+        HTTPException: If token exchange fails or no Jira sites are accessible.
     """
     # 1. Exchange code for access token
     auth_client = AtlassianAuthClient(base_url="https://auth.atlassian.com")
@@ -107,13 +153,13 @@ async def jira_auth_callback(
     if not resources:
         raise HTTPException(status_code=400, detail="No accessible Jira resources found")
     
-    # Look specifically for resources that have Jira scopes
+    # Identify the correct Jira resource by checking for required scopes
     jira_resource = next(
         (r for r in resources if any("jira" in s for s in r.scopes)), 
         resources[0]
     )
     
-    # 3. Store in USERS_DB
+    # 3. Store the Jira configuration in the user's database record
     jira_config = JiraConfig(
         access_token=access_token,
         refresh_token=refresh_token,

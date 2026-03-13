@@ -1,3 +1,9 @@
+/**
+ * Main Dashboard Component.
+ * This is the primary interface for users to connect to Jira, select projects,
+ * report NHI findings, and view recent ticket activity.
+ */
+
 import React, { useState, useEffect, useCallback } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { jiraApi, authApi } from '../api';
@@ -5,28 +11,42 @@ import type { Project, Ticket, User } from '../models';
 import { LogOut, RefreshCw, Send, ExternalLink } from 'lucide-react';
 
 const Dashboard: React.FC = () => {
+  // --- State Hooks ---
+  
+  // User and Project data
   const [user, setUser] = useState<User | undefined>(undefined);
   const [projects, setProjects] = useState<Project[]>([]);
   const [selectedProject, setSelectedProject] = useState<string>('');
+  
+  // Ticket and Finding data
   const [recentTickets, setRecentTickets] = useState<Ticket[]>([]);
   const [title, setTitle] = useState('');
   const [description, setDescription] = useState('');
+  
+  // UI logic states
   const [loading, setLoading] = useState(false);
   const [connectionError, setConnectionError] = useState<string | undefined>(undefined);
   const [findingError, setFindingError] = useState<string | undefined>(undefined);
   
-  // Jira Config State
+  // Controls visibility of the Jira connection settings panel
   const [showConfig, setShowConfig] = useState(false);
+  
+  // Ref to track if the OAuth callback has been processed (prevents double-run in StrictMode)
   const callbackProcessed = React.useRef(false);
 
   const navigate = useNavigate();
 
+  /**
+   * Fetches the current user's profile and checks if Jira is connected.
+   * If connected, it automatically fetches available projects.
+   */
   const fetchUserData = useCallback(async () => {
     try {
       const userData = await authApi.getCurrentUser();
       setUser(userData);
       
       if (userData.jira_config) {
+        // Jira is connected, hide config and fetch projects
         setShowConfig(false);
         const projectsData = await jiraApi.getProjects();
         setProjects(projectsData);
@@ -36,11 +56,13 @@ const Dashboard: React.FC = () => {
           alert("Your Jira workspace has no projects. You will not be able to report findings until a project is created in Jira.");
         }
       } else {
+        // Jira is not connected, show the connection prompt
         setShowConfig(true);
       }
     } catch (err: unknown) {
       if (err && typeof err === 'object' && 'response' in err) {
         const axiosError = err as { response: { status: number } };
+        // If unauthorized, redirect to login page
         if (axiosError.response?.status === 401) {
           navigate('/login');
           return;
@@ -50,7 +72,12 @@ const Dashboard: React.FC = () => {
     }
   }, [navigate]);
 
+  /**
+   * Completes the Jira OAuth 2.0 flow by sending the authorization code to the backend.
+   * @param code The authorization code from Atlassian.
+   */
   const handleJiraCallback = useCallback(async (code: string) => {
+    // Avoid double processing in development mode
     if (callbackProcessed.current) return;
     callbackProcessed.current = true;
     
@@ -58,7 +85,7 @@ const Dashboard: React.FC = () => {
     setConnectionError(undefined);
     try {
       await authApi.jiraAuthCallback(code);
-      // Clear URL parameters
+      // Clean up URL and refresh local state
       navigate('/dashboard', { replace: true });
       await fetchUserData();
     } catch {
@@ -80,11 +107,15 @@ const Dashboard: React.FC = () => {
     fetchUserData();
   }, [fetchUserData]);
 
+  /**
+   * Initiates the Jira OAuth flow by redirecting the user to Atlassian.
+   */
   const handleConnectJira = async () => {
     setLoading(true);
     setConnectionError(undefined);
     try {
       const { url } = await authApi.getJiraAuthUrl();
+      // Redirect to Atlassian's consent page
       window.location.href = url;
     } catch {
       setConnectionError('Failed to get Jira authorization URL. Please ensure JIRA_CLIENT_ID is configured.');
@@ -92,6 +123,9 @@ const Dashboard: React.FC = () => {
     }
   };
 
+  /**
+   * Fetches the 10 most recent tickets for the currently selected project.
+   */
   const fetchRecentTickets = useCallback(async () => {
     if (!selectedProject) return;
     try {
@@ -106,6 +140,10 @@ const Dashboard: React.FC = () => {
     fetchRecentTickets();
   }, [fetchRecentTickets]);
 
+  /**
+   * Handles the submission of a new NHI finding.
+   * Creates a ticket in the user's Jira workspace.
+   */
   const handleCreateTicket = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!selectedProject || !title || !description) return;
@@ -113,6 +151,7 @@ const Dashboard: React.FC = () => {
     setFindingError(undefined);
     try {
       await jiraApi.createTicket(selectedProject, title, description);
+      // Clear form and refresh list
       setTitle('');
       setDescription('');
       fetchRecentTickets();
@@ -123,6 +162,9 @@ const Dashboard: React.FC = () => {
     }
   };
 
+  /**
+   * Manually triggers the background job to scrape and summarize the latest blog post.
+   */
   const handleTriggerBlogDigest = async () => {
     if (!selectedProject) return;
     setLoading(true);
@@ -142,6 +184,9 @@ const Dashboard: React.FC = () => {
     }
   };
 
+  /**
+   * Logs the user out by clearing the token and redirecting to the login page.
+   */
   const handleLogout = () => {
     localStorage.removeItem('token');
     navigate('/login');

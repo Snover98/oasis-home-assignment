@@ -1,15 +1,25 @@
+"""
+AI Summary Service for the Oasis NHI Ticket System.
+This service simulates generating AI-powered summaries for blog posts
+that are then used to populate Jira tickets.
+"""
 
 class AISummaryService:
     """
     Service for generating AI-powered summaries of blog posts.
+    In a production environment, this would interface with an LLM provider.
     """
 
     async def summarize_blog_post(self, title: str, content: str) -> str:
         """
         Generates a summary of the blog post content.
-        :param title: The title of the blog post.
-        :param content: The content (or excerpt) of the blog post.
-        :return: A concise summary.
+
+        Args:
+            title (str): The title of the blog post.
+            content (str): The content or excerpt of the blog post.
+
+        Returns:
+            str: A concise summary of the blog post.
         """
         # In a real implementation, this would call an LLM (e.g., OpenAI API)
         # Mock summary for POC

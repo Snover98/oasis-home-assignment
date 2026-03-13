@@ -1,3 +1,8 @@
+"""
+API Router for Jira-related endpoints in the Oasis NHI Ticket System.
+Provides endpoints for project retrieval, ticket creation, and search.
+"""
+
 from fastapi import APIRouter, Depends, HTTPException
 from typing import Any
 
@@ -10,7 +15,16 @@ router = APIRouter(tags=["jira"])
 @router.get("/api/v1/jira/projects", response_model=list[Project])
 async def get_jira_projects(current_user: User = Depends(get_current_user)) -> list[Project]:
     """
-    Fetches all projects from the user's Jira workspace.
+    Fetches all projects from the user's connected Jira workspace.
+
+    Args:
+        current_user (User): The currently authenticated user (from dependency).
+
+    Returns:
+        list[Project]: A list of Jira projects.
+
+    Raises:
+        HTTPException: If Jira is not connected for the user.
     """
     if not current_user.jira_config:
         raise HTTPException(status_code=400, detail="Jira not connected")
@@ -25,6 +39,16 @@ async def create_jira_ticket(
 ) -> dict[str, str]:
     """
     Creates a new ticket in the user's Jira workspace.
+
+    Args:
+        ticket_data (TicketCreate): The data for the new ticket.
+        current_user (User): The currently authenticated user (from dependency).
+
+    Returns:
+        dict[str, str]: Details of the created ticket (ID and key).
+
+    Raises:
+        HTTPException: If Jira is not connected for the user.
     """
     if not current_user.jira_config:
         raise HTTPException(status_code=400, detail="Jira not connected")
@@ -42,7 +66,17 @@ async def get_recent_jira_tickets(
     current_user: User = Depends(get_current_user)
 ) -> list[Ticket]:
     """
-    Fetches the 10 most recent tickets for the selected project.
+    Fetches the 10 most recent tickets for a specific Jira project.
+
+    Args:
+        project_key (str): The key of the Jira project to search in.
+        current_user (User): The currently authenticated user (from dependency).
+
+    Returns:
+        list[Ticket]: A list of the most recent tickets.
+
+    Raises:
+        HTTPException: If Jira is not connected for the user.
     """
     if not current_user.jira_config:
         raise HTTPException(status_code=400, detail="Jira not connected")
@@ -56,7 +90,17 @@ async def report_finding(
     current_user: User = Depends(get_current_user)
 ) -> dict[str, Any]:
     """
-    Endpoint to report findings using the current user's Jira context.
+    Reports an NHI finding by creating a corresponding ticket in Jira.
+
+    Args:
+        finding (FindingCreate): The finding details and target project.
+        current_user (User): The currently authenticated user (from dependency).
+
+    Returns:
+        dict[str, Any]: Success status and the created ticket details.
+
+    Raises:
+        HTTPException: If Jira is not connected or the ticket creation fails.
     """
     if not current_user.jira_config:
         raise HTTPException(status_code=400, detail="Jira not connected")
@@ -70,7 +114,7 @@ async def report_finding(
             description=finding.description
         )
         return {"status": "success", "ticket": result}
+    except HTTPException as e:
+        raise e
     except Exception as e:
-        if isinstance(e, HTTPException):
-            raise e
         raise HTTPException(status_code=500, detail=str(e))
