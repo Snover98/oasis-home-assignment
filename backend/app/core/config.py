@@ -33,10 +33,8 @@ class Settings(BaseSettings):
     ATLASSIAN_API_BASE_URL: str = "https://api.atlassian.com"
     ATLASSIAN_DEFAULT_SITE_URL: str = "https://atlassian.net"
 
-    # Pydantic model configuration for environment file discovery
+    # Pydantic model configuration
     model_config = {
-        "env_file": (".env", "backend/.env"),
-        "env_file_encoding": "utf-8",
         "extra": "ignore"
     }
 
