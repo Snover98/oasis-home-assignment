@@ -13,7 +13,7 @@ from pydantic_client import get, post
 from pydantic_client.async_client import HttpxWebClient
 from app.models.models import (
     User, Token, JiraConfig, AtlassianTokenResponse, AtlassianResourceResponse,
-    AtlassianTokenExchangeRequest
+    AtlassianTokenExchangeRequest, AuthUrlResponse, AuthCallbackResponse
 )
 from app.core.config import settings
 from app.core.auth import (
@@ -85,8 +85,8 @@ async def read_users_me(current_user: User = Depends(get_current_user)) -> User:
     """
     return current_user
 
-@router.get("/api/v1/jira/auth/url", tags=["jira-auth"])
-async def get_jira_auth_url(current_user: User = Depends(get_current_user)) -> dict[str, str]:
+@router.get("/api/v1/jira/auth/url", response_model=AuthUrlResponse, tags=["jira-auth"])
+async def get_jira_auth_url(current_user: User = Depends(get_current_user)) -> AuthUrlResponse:
     """
     Generates the Atlassian OAuth 2.0 authorization URL for the user to initiate the connection.
 
@@ -94,7 +94,7 @@ async def get_jira_auth_url(current_user: User = Depends(get_current_user)) -> d
         current_user (User): The authenticated user (from dependency).
 
     Returns:
-        dict[str, str]: The URL to which the frontend should redirect the user.
+        AuthUrlResponse: The URL to which the frontend should redirect the user.
     """
     params = {
         "audience": "api.atlassian.com",
@@ -106,13 +106,13 @@ async def get_jira_auth_url(current_user: User = Depends(get_current_user)) -> d
         "prompt": "consent"
     }
     url = f"{settings.ATLASSIAN_AUTH_URL}?{urllib.parse.urlencode(params, quote_via=urllib.parse.quote)}"
-    return {"url": url}
+    return AuthUrlResponse(url=url)
 
-@router.post("/api/v1/jira/auth/callback", tags=["jira-auth"])
+@router.post("/api/v1/jira/auth/callback", response_model=AuthCallbackResponse, tags=["jira-auth"])
 async def jira_auth_callback(
     code: str, 
     current_user: User = Depends(get_current_user)
-) -> dict[str, str]:
+) -> AuthCallbackResponse:
     """
     OAuth 2.0 callback endpoint. Exchanges the authorization code for tokens,
     identifies the accessible Jira site, and stores the configuration for the user.
@@ -122,7 +122,7 @@ async def jira_auth_callback(
         current_user (User): The authenticated user (from dependency).
 
     Returns:
-        dict[str, str]: A success message and the name of the connected site.
+        AuthCallbackResponse: A success message and the name of the connected site.
 
     Raises:
         HTTPException: If token exchange fails or no Jira sites are accessible or user does not exist
@@ -168,4 +168,4 @@ async def jira_auth_callback(
         cloud_id=jira_resource.id,
         site_url=jira_resource.url
     )
-    return {"status": "success", "site_name": jira_resource.name}
+    return AuthCallbackResponse(status="success", site_name=jira_resource.name)

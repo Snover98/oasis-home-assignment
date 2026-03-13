@@ -4,17 +4,16 @@ Currently handles the NHI Blog Digest job.
 """
 
 from fastapi import APIRouter, Depends, HTTPException
-from typing import Any
 
-from app.models.models import User, BlogDigestRequest
+from app.models.models import User, BlogDigestRequest, BlogDigestResponse, TicketReference
 from app.core.auth import get_current_user
-from app.services.jira import JiraService
-from app.services.blog_scraper import BlogScraper
 from app.services.ai_summary import AISummaryService
-
+from app.services.blog_scraper import BlogScraper
+from app.services.jira import JiraService
+...
 router = APIRouter(tags=["jobs"])
 
-async def perform_blog_digest(current_user: User, project_key: str) -> dict[str, Any]:
+async def perform_blog_digest(current_user: User, project_key: str) -> TicketReference:
     """
     Core logic for the blog digest job: scrapes the latest blog post,
     summarizes it with AI, and creates a Jira ticket.
@@ -24,7 +23,7 @@ async def perform_blog_digest(current_user: User, project_key: str) -> dict[str,
         project_key (str): The Jira project where the ticket should be created.
 
     Returns:
-        dict[str, Any]: Details of the created Jira ticket.
+        TicketReference: Details of the created Jira ticket.
 
     Raises:
         HTTPException: If Jira is not connected, scraping fails, or the ticket creation fails.
@@ -38,20 +37,20 @@ async def perform_blog_digest(current_user: User, project_key: str) -> dict[str,
         raise HTTPException(status_code=500, detail="Failed to fetch the latest blog post from Oasis website")
 
     ai_service = AISummaryService()
-    summary = await ai_service.summarize_blog_post(latest_post["title"], latest_post["content"])
+    summary = await ai_service.summarize_blog_post(latest_post.title, latest_post.content)
 
     jira_service = JiraService(current_user.jira_config)
     return await jira_service.create_ticket(
         project_key=project_key,
-        summary=f"Blog Digest: {latest_post['title']}",
-        description=f"Link: {latest_post['url']}\n\nSummary:\n{summary}"
+        summary=f"Blog Digest: {latest_post.title}",
+        description=f"Link: {latest_post.url}\n\nSummary:\n{summary}"
     )
 
-@router.post("/api/v1/jobs/blog-digest")
+@router.post("/api/v1/jobs/blog-digest", response_model=BlogDigestResponse)
 async def trigger_blog_digest(
     request: BlogDigestRequest,
     current_user: User = Depends(get_current_user)
-) -> dict[str, Any]:
+) -> BlogDigestResponse:
     """
     Manual trigger for the NHI Blog Digest job.
 
@@ -60,14 +59,14 @@ async def trigger_blog_digest(
         current_user (User): The authenticated user (from dependency).
 
     Returns:
-        dict[str, Any]: Success status and the created ticket details.
+        BlogDigestResponse: Success status and the created ticket details.
 
     Raises:
         HTTPException: If the job execution fails.
     """
     try:
         result = await perform_blog_digest(current_user, request.project_key)
-        return {"status": "success", "ticket": result}
+        return BlogDigestResponse(status="success", ticket=result)
     except HTTPException as e:
         raise e
     except Exception as e:

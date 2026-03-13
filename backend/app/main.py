@@ -11,6 +11,7 @@ import uvicorn
 from app.api.auth.router import router as auth_router
 from app.api.endpoints.jira import router as jira_router
 from app.api.jobs.router import router as jobs_router
+from app.models.models import HealthResponse
 
 # Initialize the FastAPI application
 app = FastAPI(
@@ -34,15 +35,15 @@ app.include_router(auth_router)
 app.include_router(jira_router)
 app.include_router(jobs_router)
 
-@app.get("/health", tags=["health"])
-async def health_check() -> dict[str, str]:
+@app.get("/health", response_model=HealthResponse, tags=["health"])
+async def health_check() -> HealthResponse:
     """
     Simple health check endpoint to verify that the API is running.
 
     Returns:
-        dict[str, str]: A dictionary with the status 'ok'.
+        HealthResponse: A response with the status 'ok'.
     """
-    return {"status": "ok"}
+    return HealthResponse(status="ok")
 
 def main() -> None:
     """

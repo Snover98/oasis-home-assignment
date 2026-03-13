@@ -7,6 +7,7 @@ from bs4 import BeautifulSoup
 from pydantic_client import get
 from pydantic_client.async_client import HttpxWebClient
 from fastapi import HTTPException
+from app.models.models import BlogPost
 
 class OasisBlogClient(HttpxWebClient):
     """
@@ -24,13 +25,13 @@ class BlogScraper:
     
     URL = "https://www.oasis.security"
 
-    async def get_latest_post(self) -> dict[str, str] | None:
+    async def get_latest_post(self) -> BlogPost | None:
         """
         Fetches the latest blog post from the Oasis blog listing page.
 
         Returns:
-            dict[str, str] | None: A dictionary containing 'title', 'url', and 'content' 
-                                   if successful, None otherwise.
+            BlogPost | None: A Pydantic model containing 'title', 'url', and 'content' 
+                             if successful, None otherwise.
         
         Raises:
             HTTPException: If the blog post fetch fails, or the scraping fails
@@ -56,11 +57,11 @@ class BlogScraper:
                 if url and not url.startswith("http"):
                     url = f"https://oasis.security{url}"
                 
-                return {
-                    "title": title,
-                    "url": str(url),
-                    "content": "Full blog post content would be fetched from the URL in a real implementation."
-                }
+                return BlogPost(
+                    title=title,
+                    url=str(url),
+                    content="Full blog post content would be fetched from the URL in a real implementation."
+                )
             
             return None
         except HTTPException as e:

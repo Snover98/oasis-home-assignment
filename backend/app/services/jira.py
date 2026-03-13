@@ -9,7 +9,7 @@ from pydantic_client.async_client import HttpxWebClient
 from app.models.models import (
     IssueCreateRequest, IssueDescription, IssueFields, IssueType, JiraConfig, JiraIssuePriority, 
     ParagraphContent, Project, ProjectInfo, SearchParams, TextContent, Ticket, 
-    JiraProjectResponse, CreatedIssueResponse, JiraSearchResultsResponse
+    JiraProjectResponse, CreatedIssueResponse, JiraSearchResultsResponse, TicketReference
 )
 from typing import Any
 
@@ -70,7 +70,7 @@ class JiraService:
         projects = await self.api.get_projects()
         return [Project(id=p.id, key=p.key, name=p.name) for p in projects]
 
-    async def create_ticket(self, project_key: str, summary: str, description: str) -> dict[str, str]:
+    async def create_ticket(self, project_key: str, summary: str, description: str) -> TicketReference:
         """
         Creates a new issue (ticket) in the specified Jira project.
 
@@ -80,7 +80,7 @@ class JiraService:
             description (str): The detailed content of the ticket.
 
         Returns:
-            dict[str, str]: A dictionary containing the created ticket's ID and key.
+            TicketReference: Details of the created ticket including ID, key, and URL.
         """
         request = IssueCreateRequest(
             fields=IssueFields(
@@ -95,7 +95,7 @@ class JiraService:
             )
         )
         response = await self.api.create_ticket(json=request)
-        return {"id": response.id, "key": response.key, "self": response.self}
+        return TicketReference(id=response.id, key=response.key, self=response.self)
 
     @staticmethod
     def issue_priority(priority: JiraIssuePriority | None) -> str:

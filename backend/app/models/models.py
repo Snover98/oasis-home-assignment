@@ -46,6 +46,41 @@ class BlogDigestRequest(BaseModel):
     """Request schema for triggering a blog digest job."""
     project_key: str
 
+class AuthUrlResponse(BaseModel):
+    """Response containing the OAuth authorization URL."""
+    url: str
+
+class AuthCallbackResponse(BaseModel):
+    """Response confirming successful OAuth callback."""
+    status: str
+    site_name: str
+
+class TicketReference(BaseModel):
+    """Reference to a created Jira ticket."""
+    id: str
+    key: str
+    self: str
+
+class FindingResponse(BaseModel):
+    """Response when a finding is successfully reported."""
+    status: str
+    ticket: TicketReference
+
+class BlogDigestResponse(BaseModel):
+    """Response when a blog digest job succeeds."""
+    status: str
+    ticket: TicketReference
+
+class HealthResponse(BaseModel):
+    """Health check response."""
+    status: str
+
+class BlogPost(BaseModel):
+    """Data model representing a scraped blog post."""
+    title: str
+    url: str
+    content: str
+
 class User(BaseModel):
     """Represents a user in the system (public profile)."""
     username: str

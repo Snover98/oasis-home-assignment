@@ -6,7 +6,7 @@ Provides endpoints for project retrieval, ticket creation, and search.
 from fastapi import APIRouter, Depends, HTTPException
 from typing import Any
 
-from app.models.models import User, Project, Ticket, TicketCreate, FindingCreate
+from app.models.models import User, Project, Ticket, TicketCreate, FindingCreate, TicketReference, FindingResponse
 from app.core.auth import get_current_user
 from app.services.jira import JiraService
 
@@ -32,11 +32,11 @@ async def get_jira_projects(current_user: User = Depends(get_current_user)) -> l
     jira_service = JiraService(current_user.jira_config)
     return await jira_service.get_projects()
 
-@router.post("/api/v1/jira/tickets")
+@router.post("/api/v1/jira/tickets", response_model=TicketReference)
 async def create_jira_ticket(
     ticket_data: TicketCreate, 
     current_user: User = Depends(get_current_user)
-) -> dict[str, str]:
+) -> TicketReference:
     """
     Creates a new ticket in the user's Jira workspace.
 
@@ -45,7 +45,7 @@ async def create_jira_ticket(
         current_user (User): The currently authenticated user (from dependency).
 
     Returns:
-        dict[str, str]: Details of the created ticket (ID and key).
+        TicketReference: Details of the created ticket (ID and key).
 
     Raises:
         HTTPException: If Jira is not connected for the user.
@@ -84,11 +84,11 @@ async def get_recent_jira_tickets(
     jira_service = JiraService(current_user.jira_config)
     return await jira_service.get_recent_tickets(project_key=project_key)
 
-@router.post("/api/v1/findings")
+@router.post("/api/v1/findings", response_model=FindingResponse)
 async def report_finding(
     finding: FindingCreate, 
     current_user: User = Depends(get_current_user)
-) -> dict[str, Any]:
+) -> FindingResponse:
     """
     Reports an NHI finding by creating a corresponding ticket in Jira.
 
@@ -97,7 +97,7 @@ async def report_finding(
         current_user (User): The currently authenticated user (from dependency).
 
     Returns:
-        dict[str, Any]: Success status and the created ticket details.
+        FindingResponse: Success status and the created ticket details.
 
     Raises:
         HTTPException: If Jira is not connected or the ticket creation fails.
@@ -113,7 +113,7 @@ async def report_finding(
             summary=f"[Finding] {finding.title}",
             description=finding.description
         )
-        return {"status": "success", "ticket": result}
+        return FindingResponse(status="success", ticket=result)
     except HTTPException as e:
         raise e
     except Exception as e:
