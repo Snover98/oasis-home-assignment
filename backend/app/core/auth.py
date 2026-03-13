@@ -12,7 +12,14 @@ from app.models.models import User, UserInDB
 from app.core.security import verify_password
 from typing import Any
 
-# In-memory user store for demonstration
+"""
+In-memory user store for demonstration.
+
+For an actual implementation, this should be a secret store or a database which is accessed.
+
+Currently I also don't lock the user when modifying it due to this being a single instance backend,
+but for scale it will be needed.
+"""
 USERS_DB: dict[str, UserInDB] = {
     "testuser": UserInDB(
         username="testuser",
