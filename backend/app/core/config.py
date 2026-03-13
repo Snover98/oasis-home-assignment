@@ -33,10 +33,5 @@ class Settings(BaseSettings):
     ATLASSIAN_API_BASE_URL: str = "https://api.atlassian.com"
     ATLASSIAN_DEFAULT_SITE_URL: str = "https://atlassian.net"
 
-    # Pydantic model configuration
-    model_config = {
-        "extra": "ignore"
-    }
-
 # Global settings instance
 settings = Settings()

@@ -46,3 +46,30 @@ An automated background process (Trigger/Scheduled) that:
 * **Separation of Concerns**: Clear distinction between the UI and backend layers for maintainability and scalability.
 * **Security First**: Credential management follows secure coding standards to protect sensitive Jira API tokens.
 * **UX/DX**: Error messages are designed to be meaningful to the end-user, and the API is designed for developer ease-of-use.
+
+---
+
+
+## Getting Started
+
+### Prerequisites
+- **Python 3.13+** with the [uv](https://docs.astral.sh/uv/) package manager.
+- **Node.js** and **npm**.
+
+### Running the Project
+
+#### 1. Backend
+Navigate to the `backend` directory and run:
+```bash
+uv sync
+uv run --env-file .env uvicorn app.main:app --host 0.0.0.0 --port 8000 --reload
+```
+
+#### 2. Frontend
+Navigate to the `frontend` directory and run:
+```bash
+npm install && npm run dev
+```
+
+
+
