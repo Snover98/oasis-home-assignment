@@ -10,6 +10,7 @@ from fastapi import Depends, HTTPException, status
 from fastapi.security import OAuth2PasswordBearer
 from app.models.models import User, UserInDB
 from app.core.security import verify_password
+from app.core.config import settings
 from typing import Any
 
 """
@@ -35,10 +36,6 @@ USERS_DB: dict[str, UserInDB] = {
     )
 }
 
-SECRET_KEY = "supersecretkey"
-ALGORITHM = "HS256"
-ACCESS_TOKEN_EXPIRE_MINUTES = 60
-
 # OAuth2 scheme for token retrieval
 oauth2_scheme = OAuth2PasswordBearer(tokenUrl="token")
 
@@ -53,8 +50,7 @@ def authenticate_user(username: str, password: str) -> User | None:
     Returns:
         User | None: Returns a User model if authentication is successful, None otherwise.
     """
-    user = USERS_DB.get(username)
-    if user is None or not verify_password(password, user.password_hash):
+    if (user := USERS_DB.get(username)) is None or not verify_password(password, user.password_hash):
         return None
     
     return User(
@@ -63,27 +59,23 @@ def authenticate_user(username: str, password: str) -> User | None:
         jira_config=user.jira_config
     )
 
-def create_access_token(data: dict[str, Any], expires_delta: timedelta | None = None) -> str:
+def create_access_token(data: dict[str, Any], expires_delta: timedelta) -> str:
     """
     Creates a JWT access token for a user.
 
     Args:
         data (dict[str, Any]): Data to be encoded into the JWT (claims).
-        expires_delta (timedelta | None): Optional expiration time delta. 
-                                          Defaults to ACCESS_TOKEN_EXPIRE_MINUTES.
+        expires_delta (timedelta): expiration time delta. 
 
     Returns:
         str: The encoded JWT access token.
     """
-    if expires_delta is None:
-        expires_delta = timedelta(minutes=ACCESS_TOKEN_EXPIRE_MINUTES)
-    
     expire = datetime.now(timezone.utc) + expires_delta
 
     to_encode = data.copy()
     to_encode.update({"exp": expire})
 
-    encoded_jwt = jwt.encode(to_encode, SECRET_KEY, algorithm=ALGORITHM)
+    encoded_jwt = jwt.encode(to_encode, settings.SECRET_KEY, algorithm=settings.ALGORITHM)
     return encoded_jwt
 
 def __credentials_exception(reason: str = '') -> HTTPException:
@@ -112,7 +104,7 @@ async def get_current_user(token: str = Depends(oauth2_scheme)) -> User:
         HTTPException: If the token is invalid or the user is not found.
     """
     try:
-        payload = jwt.decode(token, SECRET_KEY, algorithms=[ALGORITHM])
+        payload = jwt.decode(token, settings.SECRET_KEY, algorithms=[settings.ALGORITHM])
         username: str | None = payload.get("sub")
         if username is None:
             raise __credentials_exception(reason="Invalid username in payload")

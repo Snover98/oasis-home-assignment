@@ -4,7 +4,6 @@ Provides endpoints for project retrieval, ticket creation, and search.
 """
 
 from fastapi import APIRouter, Depends, HTTPException
-from typing import Any
 
 from app.models.models import User, Project, Ticket, TicketCreate, FindingCreate, TicketReference, FindingResponse
 from app.core.auth import get_current_user

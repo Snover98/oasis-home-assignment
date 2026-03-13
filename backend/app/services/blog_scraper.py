@@ -8,6 +8,7 @@ from pydantic_client import get
 from pydantic_client.async_client import HttpxWebClient
 from fastapi import HTTPException
 from app.models.models import BlogPost
+from app.core.config import settings
 
 class OasisBlogClient(HttpxWebClient):
     """
@@ -22,8 +23,6 @@ class BlogScraper:
     """
     Service for scraping the Oasis Security blog using pydantic-client and BeautifulSoup.
     """
-    
-    URL = "https://www.oasis.security"
 
     async def get_latest_post(self) -> BlogPost | None:
         """
@@ -36,7 +35,7 @@ class BlogScraper:
         Raises:
             HTTPException: If the blog post fetch fails, or the scraping fails
         """
-        client = OasisBlogClient(base_url=self.URL)
+        client = OasisBlogClient(base_url=settings.OASIS_BLOG_URL)
         try:
             html_content = await client.get_blog_page()            
             soup = BeautifulSoup(html_content, "html.parser")
@@ -55,7 +54,7 @@ class BlogScraper:
                 
                 # Ensure the URL is absolute
                 if url and not url.startswith("http"):
-                    url = f"https://oasis.security{url}"
+                    url = f"{settings.OASIS_BLOG_URL}{url}"
                 
                 return BlogPost(
                     title=title,

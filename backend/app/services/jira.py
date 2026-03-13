@@ -11,8 +11,7 @@ from app.models.models import (
     ParagraphContent, Project, ProjectInfo, SearchParams, TextContent, Ticket, 
     JiraProjectResponse, CreatedIssueResponse, JiraSearchResultsResponse, TicketReference
 )
-from typing import Any
-
+from app.core.config import settings
 
 class JiraAPIClient(HttpxWebClient):
     """
@@ -46,16 +45,13 @@ class JiraService:
         Args:
             config (JiraConfig): The user's Jira configuration including access token and cloud ID.
         """
-        self.access_token = config.access_token
-        self.cloud_id = config.cloud_id
         # The base URL for 3LO Jira requests includes the cloud_id
-        self.base_api_url = f"https://api.atlassian.com/ex/jira/{self.cloud_id}"
-        self.site_url = config.site_url or "https://atlassian.net"
+        self.site_url = config.site_url or settings.ATLASSIAN_DEFAULT_SITE_URL
  
         self.api = JiraAPIClient(
-            base_url=self.base_api_url,
+            base_url=f"{settings.ATLASSIAN_API_BASE_URL}/ex/jira/{config.cloud_id}",
             headers={
-                "Authorization": f"Bearer {self.access_token}",
+                "Authorization": f"Bearer {config.access_token}",
                 "Accept": "application/json",
                 "Content-Type": "application/json"
             })

@@ -23,6 +23,16 @@ class Settings(BaseSettings):
     # Required scopes for Jira 3LO to access work items and user data
     JIRA_SCOPES: str = "read:jira-work write:jira-work read:jira-user"
 
+    # Authentication Settings
+    SECRET_KEY: str = "" # In production, this must be a strong, random value set in .env
+    ALGORITHM: str = "HS256"
+    ACCESS_TOKEN_EXPIRE_MINUTES: int = 60
+
+    # External Services
+    OASIS_BLOG_URL: str = "https://www.oasis.security"
+    ATLASSIAN_API_BASE_URL: str = "https://api.atlassian.com"
+    ATLASSIAN_DEFAULT_SITE_URL: str = "https://atlassian.net"
+
     # Pydantic model configuration for environment file discovery
     model_config = {
         "env_file": (".env", "backend/.env"),
