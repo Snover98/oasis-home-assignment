@@ -5,13 +5,14 @@ for retrieving the current authenticated user.
 """
 
 import jwt
+import secrets
 from datetime import datetime, timedelta, timezone
 from fastapi import Depends, HTTPException, status
-from fastapi.security import OAuth2PasswordBearer
-from app.models.models import User, UserInDB
-from app.core.security import verify_password
+from fastapi.security import OAuth2PasswordBearer, APIKeyHeader
+from app.models.models import User, UserInDB, UserCreate
+from app.core.security import verify_password, get_password_hash
 from app.core.config import settings
-from typing import Any
+from typing import Any, Optional
 
 """
 In-memory user store for demonstration.
@@ -26,18 +27,22 @@ USERS_DB: dict[str, UserInDB] = {
         username="testuser",
         email="test@example.com",
         password_hash="$2b$12$MAaylIRAuacc/pfH.cuEoO7NV57ru17Yjs1xo2CPEiOujauO238l2", # 'password'
-        jira_config=None
+        jira_config=None,
+        api_key="oasis_test_key_1"
     ),
     "testuser2": UserInDB(
         username="testuser2",
         email="test2@example.com",
         password_hash="$2b$12$HcznasTTRG6YHJS7wN8WvO7G60tuPKEPcp8jCq5PL8UhEgzxmbgHC", # 'notpass'
-        jira_config=None
+        jira_config=None,
+        api_key="oasis_test_key_2"
     )
 }
 
 # OAuth2 scheme for token retrieval
-oauth2_scheme = OAuth2PasswordBearer(tokenUrl="token")
+oauth2_scheme = OAuth2PasswordBearer(tokenUrl="token", auto_error=False)
+# API Key scheme for programmatic access
+api_key_header = APIKeyHeader(name="X-API-Key", auto_error=False)
 
 def authenticate_user(username: str, password: str) -> User | None:
     """
@@ -56,7 +61,40 @@ def authenticate_user(username: str, password: str) -> User | None:
     return User(
         username=user.username, 
         email=user.email, 
-        jira_config=user.jira_config
+        jira_config=user.jira_config,
+        api_key=user.api_key
+    )
+
+def register_user(user_data: UserCreate) -> User:
+    """
+    Registers a new user in the system.
+
+    Args:
+        user_data (UserCreate): The user's registration details.
+
+    Returns:
+        User: The newly created User model.
+
+    Raises:
+        ValueError: If the username already exists.
+    """
+    if user_data.username in USERS_DB:
+        raise ValueError(f"Username {user_data.username} already exists")
+
+    new_user = UserInDB(
+        username=user_data.username,
+        email=user_data.email,
+        password_hash=get_password_hash(user_data.password),
+        jira_config=None,
+        api_key=f"oasis_key_{secrets.token_urlsafe(16)}"
+    )
+    USERS_DB[user_data.username] = new_user
+    
+    return User(
+        username=new_user.username,
+        email=new_user.email,
+        jira_config=new_user.jira_config,
+        api_key=new_user.api_key
     )
 
 def create_access_token(data: dict[str, Any], expires_delta: timedelta) -> str:
@@ -115,4 +153,63 @@ async def get_current_user(token: str = Depends(oauth2_scheme)) -> User:
     if user is None:
         raise __credentials_exception(reason=f"User {username} not found")
     
-    return User(username=user.username, email=user.email, jira_config=user.jira_config)
+    return User(
+        username=user.username, 
+        email=user.email, 
+        jira_config=user.jira_config,
+        api_key=user.api_key
+    )
+
+async def get_user_from_api_key(api_key: Optional[str] = Depends(api_key_header)) -> User:
+    """
+    Dependency injection function to retrieve the user associated with an API key.
+
+    Args:
+        api_key (str): The API key from the X-API-Key header.
+
+    Returns:
+        User: The authenticated User model.
+
+    Raises:
+        HTTPException: If the API key is missing or invalid.
+    """
+    if not api_key:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="API Key is missing",
+        )
+    
+    # Simple lookup in our in-memory DB
+    for user in USERS_DB.values():
+        if user.api_key == api_key:
+            return User(
+                username=user.username, 
+                email=user.email, 
+                jira_config=user.jira_config,
+                api_key=user.api_key
+            )
+    
+    raise HTTPException(
+        status_code=status.HTTP_401_UNAUTHORIZED,
+        detail="Invalid API Key",
+    )
+
+async def get_any_user(
+    token: Optional[str] = Depends(oauth2_scheme),
+    api_key: Optional[str] = Depends(api_key_header)
+) -> User:
+    """
+    Dependency that allows authentication via either JWT token OR API Key.
+    Useful for endpoints that are accessed by both the UI and external systems.
+    """
+    if token:
+        try:
+            return await get_current_user(token)
+        except HTTPException:
+            if not api_key:
+                raise
+    
+    if api_key:
+        return await get_user_from_api_key(api_key)
+    
+    raise __credentials_exception(reason="No valid authentication provided (Token or API Key)")
