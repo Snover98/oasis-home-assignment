@@ -4,6 +4,8 @@ This module initializes the FastAPI application, configures middleware,
 and includes the specialized API routers.
 """
 
+import asyncio
+from contextlib import asynccontextmanager
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 import uvicorn
@@ -11,13 +13,33 @@ import uvicorn
 from app.api.auth.router import router as auth_router
 from app.api.endpoints.jira import router as jira_router
 from app.api.jobs.router import router as jobs_router
+from app.api.jobs.router import run_automated_blog_digest
 from app.models.models import HealthResponse
+
+@asynccontextmanager
+async def lifespan(app: FastAPI):
+    """
+    Lifespan event manager that handles startup and shutdown logic.
+    Starts the automated background job for blog digests.
+    """
+    # Create the background task for the automated blog digest job
+    background_task = asyncio.create_task(run_automated_blog_digest())
+    
+    yield
+    
+    # Clean up the background task on shutdown
+    background_task.cancel()
+    try:
+        await background_task
+    except asyncio.CancelledError:
+        pass
 
 # Initialize the FastAPI application
 app = FastAPI(
     title="Oasis NHI Ticket System API",
     description="Backend API for managing Non-Human Identity (NHI) findings and Jira integration.",
     version="1.0.0",
+    lifespan=lifespan
 )
 
 # Configure Cross-Origin Resource Sharing (CORS)
