@@ -33,5 +33,11 @@ class Settings(BaseSettings):
     ATLASSIAN_API_BASE_URL: str = "https://api.atlassian.com"
     ATLASSIAN_DEFAULT_SITE_URL: str = "https://atlassian.net"
 
+    # Automated Jobs Settings
+    AUTO_BLOG_DIGEST_ENABLED: bool = True
+    AUTO_BLOG_DIGEST_USER: str = "testuser"
+    AUTO_BLOG_DIGEST_PROJECT_KEY: str = "NHI" # Default project key for automated tickets
+    AUTO_BLOG_DIGEST_INTERVAL_SECONDS: int = 30 # 1 hour
+
 # Global settings instance
 settings = Settings()
