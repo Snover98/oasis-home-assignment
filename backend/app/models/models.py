@@ -86,6 +86,13 @@ class User(BaseModel):
     username: str
     email: str
     jira_config: JiraConfig | None = None
+    api_key: str | None = None
+
+class UserCreate(BaseModel):
+    """Schema for creating a new user."""
+    username: str
+    email: str
+    password: str
 
 class UserInDB(User):
     """Internal representation of a user stored in the database."""
