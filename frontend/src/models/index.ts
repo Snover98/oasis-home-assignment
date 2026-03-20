@@ -13,6 +13,13 @@ export interface JiraConfig {
   site_url?: string;
 }
 
+export interface APIKey {
+  id: string;
+  name: string;
+  key: string;
+  created_at: string;
+}
+
 /**
  * Represents a user within the system.
  */
@@ -20,7 +27,7 @@ export interface User {
   username: string;
   email: string;
   jira_config?: JiraConfig;
-  api_key?: string;
+  api_keys: APIKey[];
 }
 
 /**

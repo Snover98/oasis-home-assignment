@@ -4,7 +4,7 @@
  */
 
 import axios from 'axios';
-import type { Token, Project, Ticket, User } from '../models';
+import type { Token, Project, Ticket, User, APIKey } from '../models';
 
 /**
  * The base URL for all API requests, loaded from environment variables.
@@ -141,6 +141,36 @@ export const jiraApi = {
       project_key: projectKey,
     });
     return data;
+  },
+};
+
+/**
+ * API Key management calls.
+ */
+export const apiKeysApi = {
+  /**
+   * Retrieves all API keys for the current user.
+   */
+  list: async (): Promise<APIKey[]> => {
+    const { data } = await api.get<APIKey[]>('/api/v1/api-keys');
+    return data;
+  },
+
+  /**
+   * Generates a new API key.
+   * @param name The name of the API key.
+   */
+  generate: async (name: string): Promise<APIKey> => {
+    const { data } = await api.post<APIKey>('/api/v1/api-keys', { name });
+    return data;
+  },
+
+  /**
+   * Revokes an existing API key.
+   * @param id The ID of the API key to revoke.
+   */
+  revoke: async (id: string): Promise<void> => {
+    await api.delete(`/api/v1/api-keys/${id}`);
   },
 };
 
