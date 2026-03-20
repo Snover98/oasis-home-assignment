@@ -17,7 +17,7 @@ def mock_automated_job_deps():
         mock_settings.AUTO_BLOG_DIGEST_ENABLED = True
         mock_settings.AUTO_BLOG_DIGEST_USER = "testuser"
         mock_settings.AUTO_BLOG_DIGEST_PROJECT_KEY = "NHI"
-        mock_settings.AUTO_BLOG_DIGEST_INTERVAL_SECONDS = 3600
+        mock_settings.AUTO_BLOG_DIGEST_INTERVAL_SECONDS = settings.AUTO_BLOG_DIGEST_INTERVAL_SECONDS
         
         # Mock user in DB
         mock_user = MagicMock()
