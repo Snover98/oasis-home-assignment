@@ -20,6 +20,7 @@ export interface User {
   username: string;
   email: string;
   jira_config?: JiraConfig;
+  api_key?: string;
 }
 
 /**

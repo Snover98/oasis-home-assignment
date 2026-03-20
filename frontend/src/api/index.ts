@@ -52,6 +52,21 @@ export const authApi = {
   },
 
   /**
+   * Registers a new user and retrieves a JWT token.
+   * @param username The new user's username.
+   * @param email The new user's email.
+   * @param password The new user's password.
+   */
+  register: async (username: string, email: string, password: string): Promise<Token> => {
+    const { data } = await api.post<Token>('/api/v1/auth/register', {
+      username,
+      email,
+      password,
+    });
+    return data;
+  },
+
+  /**
    * Retrieves the current authenticated user's profile.
    */
   getCurrentUser: async (): Promise<User> => {
