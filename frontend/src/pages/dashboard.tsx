@@ -10,6 +10,7 @@ import { jiraApi, authApi } from '../api';
 import type { Project, Ticket, User } from '../models';
 import { LogOut, RefreshCw } from 'lucide-react';
 import JiraConfig from '../components/jira-config';
+import { APIKeysManager } from '../components/api-keys-manager';
 import MainContent from '../components/main-content';
 
 const Dashboard: React.FC = () => {
@@ -230,12 +231,14 @@ const Dashboard: React.FC = () => {
     <div style={{ padding: '2rem', maxWidth: '1000px', margin: '0 auto', fontFamily: 'sans-serif' }}>
       {renderHeader()}
       {showConfig ? (
-        <JiraConfig 
-          loading={loading}
-          connectionError={connectionError}
-          handleConnectJira={handleConnectJira}
-          apiKey={user?.api_key}
-        />
+        <div>
+          <JiraConfig 
+            loading={loading}
+            connectionError={connectionError}
+            handleConnectJira={handleConnectJira}
+          />
+          <APIKeysManager />
+        </div>
       ) : (
         <MainContent 
           projects={projects}

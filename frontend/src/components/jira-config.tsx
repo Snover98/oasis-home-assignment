@@ -5,20 +5,19 @@ export interface JiraConfigProps {
   loading: boolean;
   connectionError?: string;
   handleConnectJira: () => void;
-  apiKey?: string;
 }
 
-const JiraConfig: React.FC<JiraConfigProps> = ({ loading, connectionError, handleConnectJira, apiKey }) => {
+const JiraConfig: React.FC<JiraConfigProps> = ({ loading, connectionError, handleConnectJira }) => {
   return (
-    <section style={{ maxWidth: '500px', margin: '4rem auto', backgroundColor: '#fff', padding: '2rem', borderRadius: '8px', border: '1px solid #eee', boxShadow: '0 4px 6px rgba(0,0,0,0.1)', textAlign: 'center' }}>
-      <h2 style={{ marginTop: 0 }}>Jira Connection & API</h2>
+    <section style={{ maxWidth: '600px', margin: '0 auto 2rem', backgroundColor: '#fff', padding: '2rem', borderRadius: '8px', border: '1px solid #eee', boxShadow: '0 4px 6px rgba(0,0,0,0.1)' }}>
+      <h2 style={{ marginTop: 0 }}>Jira Connection</h2>
       <p style={{ color: '#666', marginBottom: '2rem' }}>
-        Configure your Jira connection and access your programmatic API key.
+        Configure your Jira connection to enable issue reporting.
       </p>
       
       {connectionError && <div style={{ color: 'red', marginBottom: '1.5rem', textAlign: 'left' }}>{connectionError}</div>}
       
-      <div style={{ marginBottom: '2.5rem' }}>
+      <div>
         <h3 style={{ fontSize: '1rem', color: '#333', textAlign: 'left', marginBottom: '1rem' }}>Atlassian OAuth</h3>
         <button
           onClick={handleConnectJira}
@@ -46,26 +45,6 @@ const JiraConfig: React.FC<JiraConfigProps> = ({ loading, connectionError, handl
           Redirects to Atlassian to authorize this application.
         </p>
       </div>
-
-      {apiKey && (
-        <div style={{ borderTop: '1px solid #eee', paddingTop: '1.5rem', textAlign: 'left' }}>
-          <h3 style={{ fontSize: '1rem', color: '#333', marginBottom: '0.5rem' }}>Your API Key</h3>
-          <p style={{ fontSize: '0.85rem', color: '#666', marginBottom: '1rem' }}>
-            Use this key in the <code>X-API-Key</code> header for programmatic access to report findings.
-          </p>
-          <div style={{ 
-            padding: '0.75rem', 
-            backgroundColor: '#f4f5f7', 
-            borderRadius: '4px', 
-            fontFamily: 'monospace', 
-            wordBreak: 'break-all',
-            border: '1px solid #dfe1e6',
-            color: '#172b4d'
-          }}>
-            {apiKey}
-          </div>
-        </div>
-      )}
     </section>
   );
 };
