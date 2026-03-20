@@ -37,7 +37,7 @@ class Settings(BaseSettings):
     AUTO_BLOG_DIGEST_ENABLED: bool = True
     AUTO_BLOG_DIGEST_USER: str = "testuser"
     AUTO_BLOG_DIGEST_PROJECT_KEY: str = "NHI" # Default project key for automated tickets
-    AUTO_BLOG_DIGEST_INTERVAL_SECONDS: int = 30 # 1 hour
+    AUTO_BLOG_DIGEST_INTERVAL_SECONDS: int = 3600 # 1 hour
 
 # Global settings instance
 settings = Settings()

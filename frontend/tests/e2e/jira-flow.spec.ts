@@ -12,7 +12,7 @@ test.describe('End-to-End Jira Integration Flow', () => {
 
     // Should arrive on dashboard with the connection prompt
     await expect(page).toHaveURL('/dashboard');
-    await expect(page.getByRole('heading', { name: 'Jira Connection & API' })).toBeVisible();
+    await expect(page.getByRole('heading', { name: 'Jira Connection' })).toBeVisible();
 
     // --- Step 2: Simulate Jira connection (mocking backend calls) ---
     // We mock the callback response because we can't perform a real OAuth handshake
@@ -77,7 +77,7 @@ test.describe('End-to-End Jira Integration Flow', () => {
 
     // --- Step 3: Verify the dashboard shows the connected view and tickets ---
     // The "Jira Connection" section should be gone
-    await expect(page.getByRole('heading', { name: 'Jira Connection & API' })).not.toBeVisible();
+    await expect(page.getByRole('heading', { name: 'Jira Connection' })).not.toBeVisible();
     
     // The "Report NHI Finding" section should be visible
     await expect(page.getByRole('heading', { name: 'Report NHI Finding' })).toBeVisible();

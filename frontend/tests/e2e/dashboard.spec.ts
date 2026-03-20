@@ -16,9 +16,9 @@ test.describe('Dashboard and Jira Flow', () => {
     await page.click('button[type="submit"]');
 
     await expect(page).toHaveURL('/dashboard');
-    await expect(page.getByRole('heading', { name: 'Jira Connection & API' })).toBeVisible();
+    await expect(page.getByRole('heading', { name: 'Jira Connection' })).toBeVisible();
     await expect(page.getByRole('button', { name: 'Connect with Atlassian' })).toBeVisible();
-    await expect(page.locator('text=Your API Key')).toBeVisible();
+    await expect(page.getByRole('heading', { name: 'API Keys' })).toBeVisible();
   });
 
   test('should log out and redirect to login', async ({ page }) => {
