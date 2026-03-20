@@ -3,8 +3,19 @@ Data models for the Oasis NHI Ticket System.
 Defines Pydantic models for internal data structures, API requests, and external API responses.
 """
 
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 from datetime import datetime
+
+class APIKey(BaseModel):
+    """Represents an API key for programmatic access."""
+    id: str
+    name: str
+    key: str
+    created_at: datetime
+
+class APIKeyCreate(BaseModel):
+    """Request schema for creating a new API key."""
+    name: str
 
 class JiraConfig(BaseModel):
     """Configuration for a user's Jira connection."""
@@ -86,7 +97,7 @@ class User(BaseModel):
     username: str
     email: str
     jira_config: JiraConfig | None = None
-    api_key: str | None = None
+    api_keys: list[APIKey] = Field(default_factory=list)
 
 class UserCreate(BaseModel):
     """Schema for creating a new user."""

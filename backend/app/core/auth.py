@@ -6,10 +6,11 @@ for retrieving the current authenticated user.
 
 import jwt
 import secrets
+import uuid
 from datetime import datetime, timedelta, timezone
 from fastapi import Depends, HTTPException, status
 from fastapi.security import OAuth2PasswordBearer, APIKeyHeader
-from app.models.models import User, UserInDB, UserCreate
+from app.models.models import User, UserInDB, UserCreate, APIKey
 from app.core.security import verify_password, get_password_hash
 from app.core.config import settings
 from typing import Any, Optional
@@ -28,14 +29,28 @@ USERS_DB: dict[str, UserInDB] = {
         email="test@example.com",
         password_hash="$2b$12$MAaylIRAuacc/pfH.cuEoO7NV57ru17Yjs1xo2CPEiOujauO238l2", # 'password'
         jira_config=None,
-        api_key="oasis_test_key_1"
+        api_keys=[
+            APIKey(
+                id=str(uuid.uuid4()),
+                name="Default Key",
+                key="oasis_test_key_1",
+                created_at=datetime.now(timezone.utc)
+            )
+        ]
     ),
     "testuser2": UserInDB(
         username="testuser2",
         email="test2@example.com",
         password_hash="$2b$12$HcznasTTRG6YHJS7wN8WvO7G60tuPKEPcp8jCq5PL8UhEgzxmbgHC", # 'notpass'
         jira_config=None,
-        api_key="oasis_test_key_2"
+        api_keys=[
+            APIKey(
+                id=str(uuid.uuid4()),
+                name="Default Key",
+                key="oasis_test_key_2",
+                created_at=datetime.now(timezone.utc)
+            )
+        ]
     )
 }
 
@@ -62,7 +77,7 @@ def authenticate_user(username: str, password: str) -> User | None:
         username=user.username, 
         email=user.email, 
         jira_config=user.jira_config,
-        api_key=user.api_key
+        api_keys=user.api_keys
     )
 
 def register_user(user_data: UserCreate) -> User:
@@ -86,7 +101,14 @@ def register_user(user_data: UserCreate) -> User:
         email=user_data.email,
         password_hash=get_password_hash(user_data.password),
         jira_config=None,
-        api_key=f"oasis_key_{secrets.token_urlsafe(16)}"
+        api_keys=[
+            APIKey(
+                id=str(uuid.uuid4()),
+                name="Default Key",
+                key=f"oasis_key_{secrets.token_urlsafe(16)}",
+                created_at=datetime.now(timezone.utc)
+            )
+        ]
     )
     USERS_DB[user_data.username] = new_user
     
@@ -94,7 +116,7 @@ def register_user(user_data: UserCreate) -> User:
         username=new_user.username,
         email=new_user.email,
         jira_config=new_user.jira_config,
-        api_key=new_user.api_key
+        api_keys=new_user.api_keys
     )
 
 def create_access_token(data: dict[str, Any], expires_delta: timedelta) -> str:
@@ -157,7 +179,7 @@ async def get_current_user(token: str = Depends(oauth2_scheme)) -> User:
         username=user.username, 
         email=user.email, 
         jira_config=user.jira_config,
-        api_key=user.api_key
+        api_keys=user.api_keys
     )
 
 async def get_user_from_api_key(api_key: Optional[str] = Depends(api_key_header)) -> User:
@@ -181,13 +203,14 @@ async def get_user_from_api_key(api_key: Optional[str] = Depends(api_key_header)
     
     # Simple lookup in our in-memory DB
     for user in USERS_DB.values():
-        if user.api_key == api_key:
-            return User(
-                username=user.username, 
-                email=user.email, 
-                jira_config=user.jira_config,
-                api_key=user.api_key
-            )
+        for ak in user.api_keys:
+            if ak.key == api_key:
+                return User(
+                    username=user.username, 
+                    email=user.email, 
+                    jira_config=user.jira_config,
+                    api_keys=user.api_keys
+                )
     
     raise HTTPException(
         status_code=status.HTTP_401_UNAUTHORIZED,

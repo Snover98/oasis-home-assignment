@@ -4,15 +4,18 @@ Handles JWT token generation, user profile retrieval, and Atlassian OAuth 2.0 fl
 """
 
 import urllib.parse
+import secrets
+import uuid
 from fastapi import APIRouter, Depends, HTTPException, status
 from fastapi.security import OAuth2PasswordRequestForm
-from datetime import timedelta
+from datetime import timedelta, datetime, timezone
 
 from pydantic_client import get, post
 from pydantic_client.async_client import HttpxWebClient
 from app.models.models import (
     User, Token, JiraConfig, AtlassianTokenResponse, AtlassianResourceResponse,
-    AtlassianTokenExchangeRequest, AuthUrlResponse, AuthCallbackResponse, UserCreate
+    AtlassianTokenExchangeRequest, AuthUrlResponse, AuthCallbackResponse, UserCreate,
+    APIKey, APIKeyCreate
 )
 from app.core.config import settings
 from app.core.auth import (
@@ -196,3 +199,48 @@ async def jira_auth_callback(
         site_url=jira_resource.url
     )
     return AuthCallbackResponse(status="success", site_name=jira_resource.name)
+
+
+@router.get("/api/v1/api-keys", response_model=list[APIKey], tags=["api-keys"])
+async def get_api_keys(current_user: User = Depends(get_current_user)) -> list[APIKey]:
+    """
+    Retrieves the list of API keys for the current user.
+    """
+    return current_user.api_keys
+
+@router.post("/api/v1/api-keys", response_model=APIKey, tags=["api-keys"])
+async def create_api_key(
+    key_data: APIKeyCreate,
+    current_user: User = Depends(get_current_user)
+) -> APIKey:
+    """
+    Generates and stores a new API key for the user.
+    """
+    new_key = APIKey(
+        id=str(uuid.uuid4()),
+        name=key_data.name,
+        key=f"oasis_key_{secrets.token_urlsafe(16)}",
+        created_at=datetime.now(timezone.utc)
+    )
+    
+    # Update the DB record
+    user_in_db = USERS_DB[current_user.username]
+    user_in_db.api_keys.append(new_key)
+    
+    return new_key
+
+@router.delete("/api/v1/api-keys/{key_id}", status_code=status.HTTP_204_NO_CONTENT, tags=["api-keys"])
+async def revoke_api_key(
+    key_id: str,
+    current_user: User = Depends(get_current_user)
+) -> None:
+    """
+    Revokes (deletes) a specific API key for the user.
+    """
+    user_in_db = USERS_DB[current_user.username]
+    original_length = len(user_in_db.api_keys)
+    
+    user_in_db.api_keys = [k for k in user_in_db.api_keys if k.id != key_id]
+    
+    if len(user_in_db.api_keys) == original_length:
+        raise HTTPException(status_code=404, detail="API Key not found")
