@@ -12,13 +12,14 @@ from pydantic_client import get, post
 from pydantic_client.async_client import HttpxWebClient
 from app.models.models import (
     User, Token, JiraConfig, AtlassianTokenResponse, AtlassianResourceResponse,
-    AtlassianTokenExchangeRequest, AuthUrlResponse, AuthCallbackResponse
+    AtlassianTokenExchangeRequest, AuthUrlResponse, AuthCallbackResponse, UserCreate
 )
 from app.core.config import settings
 from app.core.auth import (
     authenticate_user, 
     create_access_token, 
     get_current_user, 
+    register_user,
     USERS_DB
 )
 
@@ -41,6 +42,34 @@ class AtlassianAPIClient(HttpxWebClient):
     async def get_accessible_resources(self) -> list[AtlassianResourceResponse]: 
         """Retrieves the list of Jira sites accessible with the current access token."""
         ...
+
+@router.post("/api/v1/auth/register", response_model=Token, tags=["auth"])
+async def register(user_data: UserCreate) -> dict[str, str]:
+    """
+    Register endpoint to create a new user and obtain a JWT access token.
+
+    Args:
+        user_data (UserCreate): The registration details (username, email, password).
+
+    Returns:
+        dict[str, str]: The generated JWT access token and token type.
+
+    Raises:
+        HTTPException: If the username already exists.
+    """
+    try:
+        register_user(user_data)
+    except ValueError as e:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=str(e)
+        )
+    
+    access_token_expires = timedelta(minutes=settings.ACCESS_TOKEN_EXPIRE_MINUTES)
+    access_token = create_access_token(
+        data={"sub": user_data.username}, expires_delta=access_token_expires
+    )
+    return {"access_token": access_token, "token_type": "bearer"}
 
 @router.post("/token", response_model=Token, tags=["auth"])
 async def login_for_access_token(form_data: OAuth2PasswordRequestForm = Depends()) -> dict[str, str]:

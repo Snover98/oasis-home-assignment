@@ -6,7 +6,7 @@ Provides endpoints for project retrieval, ticket creation, and search.
 from fastapi import APIRouter, Depends, HTTPException
 
 from app.models.models import User, Project, Ticket, TicketCreate, FindingCreate, TicketReference, FindingResponse
-from app.core.auth import get_current_user
+from app.core.auth import get_current_user, get_any_user
 from app.services.jira import JiraService
 
 router = APIRouter(tags=["jira"])
@@ -86,7 +86,7 @@ async def get_recent_jira_tickets(
 @router.post("/api/v1/findings", response_model=FindingResponse)
 async def report_finding(
     finding: FindingCreate, 
-    current_user: User = Depends(get_current_user)
+    current_user: User = Depends(get_any_user)
 ) -> FindingResponse:
     """
     Reports an NHI finding by creating a corresponding ticket in Jira.
