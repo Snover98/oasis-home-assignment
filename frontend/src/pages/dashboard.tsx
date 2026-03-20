@@ -190,9 +190,14 @@ const Dashboard: React.FC = () => {
   /**
    * Logs the user out by clearing the token and redirecting to the login page.
    */
-  const handleLogout = () => {
-    localStorage.removeItem('token');
-    navigate('/login');
+  const handleLogout = async () => {
+    try {
+      await authApi.logout();
+    } catch {
+      // Best-effort logout; redirect even if the cookie clear request fails.
+    } finally {
+      navigate('/login');
+    }
   };
 
   if (!user) {

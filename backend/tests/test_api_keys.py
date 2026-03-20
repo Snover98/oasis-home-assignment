@@ -1,19 +1,20 @@
 import pytest
 from httpx import AsyncClient, ASGITransport
 from app.main import app
+from app.core.config import settings
 
 @pytest.mark.asyncio
 async def test_api_keys_flow():
     transport = ASGITransport(app=app)
     async with AsyncClient(transport=transport, base_url="http://test") as ac:
-        # 1. Login to get token
+        # 1. Login to establish cookies
         login_response = await ac.post("/token", data={"username": "testuser", "password": "password"})
-        assert login_response.status_code == 200
-        token = login_response.json()["access_token"]
-        headers = {"Authorization": f"Bearer {token}"}
+        assert login_response.status_code == 204
+        csrf_token = ac.cookies.get(settings.CSRF_COOKIE_NAME)
+        headers = {settings.CSRF_HEADER_NAME: csrf_token}
 
         # 2. Get initial API keys
-        list_response = await ac.get("/api/v1/api-keys", headers=headers)
+        list_response = await ac.get("/api/v1/api-keys")
         assert list_response.status_code == 200
         initial_keys = list_response.json()
         assert len(initial_keys) == 1
@@ -29,7 +30,7 @@ async def test_api_keys_flow():
         key_id = new_key["id"]
 
         # 4. Verify it was added
-        list_response_2 = await ac.get("/api/v1/api-keys", headers=headers)
+        list_response_2 = await ac.get("/api/v1/api-keys")
         assert len(list_response_2.json()) == 2
         assert all("key" not in api_key for api_key in list_response_2.json())
 
@@ -38,9 +39,20 @@ async def test_api_keys_flow():
         assert delete_response.status_code == 204
 
         # 6. Verify it was removed
-        list_response_3 = await ac.get("/api/v1/api-keys", headers=headers)
+        list_response_3 = await ac.get("/api/v1/api-keys")
         assert len(list_response_3.json()) == 1
 
         # 7. Try to revoke a non-existent key
         delete_fail_response = await ac.delete("/api/v1/api-keys/fake-id", headers=headers)
         assert delete_fail_response.status_code == 404
+
+@pytest.mark.asyncio
+async def test_api_key_write_requires_csrf_for_cookie_auth():
+    transport = ASGITransport(app=app)
+    async with AsyncClient(transport=transport, base_url="http://test") as ac:
+        login_response = await ac.post("/token", data={"username": "testuser", "password": "password"})
+        assert login_response.status_code == 204
+
+        create_response = await ac.post("/api/v1/api-keys", json={"name": "Missing CSRF"})
+        assert create_response.status_code == 403
+        assert create_response.json()["detail"] == "CSRF validation failed"

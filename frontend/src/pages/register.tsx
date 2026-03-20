@@ -27,9 +27,7 @@ const Register: React.FC = () => {
     setLoading(true);
     setError(undefined);
     try {
-      const { access_token } = await authApi.register(username, email, password);
-      // Store the JWT token for use in subsequent authenticated requests
-      localStorage.setItem('token', access_token);
+      await authApi.register(username, email, password);
       navigate('/dashboard');
     } catch (err: any) {
       setError(err.response?.data?.detail || 'Failed to register. Username might already exist.');

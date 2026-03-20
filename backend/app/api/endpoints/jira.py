@@ -6,7 +6,7 @@ Provides endpoints for project retrieval, ticket creation, and search.
 from fastapi import APIRouter, Depends, HTTPException
 
 from app.models.models import User, Project, Ticket, TicketCreate, FindingCreate, TicketReference, FindingResponse
-from app.core.auth import get_current_user, get_any_user
+from app.core.auth import get_current_user, get_any_user, require_csrf_for_cookie_auth
 from app.services.jira import JiraService
 
 router = APIRouter(tags=["jira"])
@@ -34,7 +34,8 @@ async def get_jira_projects(current_user: User = Depends(get_current_user)) -> l
 @router.post("/api/v1/jira/tickets", response_model=TicketReference)
 async def create_jira_ticket(
     ticket_data: TicketCreate, 
-    current_user: User = Depends(get_current_user)
+    current_user: User = Depends(get_current_user),
+    _: None = Depends(require_csrf_for_cookie_auth),
 ) -> TicketReference:
     """
     Creates a new ticket in the user's Jira workspace.

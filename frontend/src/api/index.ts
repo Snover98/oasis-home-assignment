@@ -4,7 +4,7 @@
  */
 
 import axios from 'axios';
-import type { Token, Project, Ticket, User, APIKey, APIKeyWithSecret } from '../models';
+import type { Project, Ticket, User, APIKey, APIKeyWithSecret } from '../models';
 
 /**
  * The base URL for all API requests, loaded from environment variables.
@@ -20,50 +20,79 @@ const api = axios.create({
   withCredentials: true,
 });
 
-/**
- * Request interceptor to automatically attach the JWT token from localStorage
- * to the Authorization header of every outgoing request.
- */
+const CSRF_COOKIE_NAME = 'oasis_csrf_token';
+const CSRF_HEADER_NAME = 'X-CSRF-Token';
+
+const getCookieValue = (name: string): string | undefined => {
+  const prefix = `${name}=`;
+  return document.cookie
+    .split('; ')
+    .find((cookie) => cookie.startsWith(prefix))
+    ?.slice(prefix.length);
+};
+
 api.interceptors.request.use((config) => {
-  const token = localStorage.getItem('token');
-  if (token) {
-    config.headers.Authorization = `Bearer ${token}`;
+  const method = config.method?.toLowerCase();
+  const shouldAttachCsrf = method && !['get', 'head', 'options'].includes(method);
+  const csrfToken = getCookieValue(CSRF_COOKIE_NAME);
+  if (shouldAttachCsrf && csrfToken) {
+    config.headers.set(CSRF_HEADER_NAME, csrfToken);
   }
   return config;
 });
+
+api.interceptors.response.use(
+  (response) => response,
+  async (error) => {
+    const originalRequest = error.config as typeof error.config & { _retry?: boolean };
+    const requestUrl = originalRequest?.url ?? '';
+    const isRefreshableRequest = ![
+      '/token',
+      '/api/v1/auth/register',
+      '/api/v1/auth/refresh',
+      '/api/v1/auth/logout',
+    ].includes(requestUrl);
+
+    if (error.response?.status === 401 && originalRequest && !originalRequest._retry && isRefreshableRequest) {
+      originalRequest._retry = true;
+      await axios.post(`${API_BASE_URL}/api/v1/auth/refresh`, null, { withCredentials: true });
+      return api(originalRequest);
+    }
+
+    return Promise.reject(error);
+  }
+);
 
 /**
  * Authentication related API calls.
  */
 export const authApi = {
   /**
-   * Performs user login and retrieves a JWT token.
+   * Performs user login and establishes the cookie-backed session.
    * @param username The user's username.
    * @param password The user's password.
    */
-  login: async (username: string, password: string): Promise<Token> => {
+  login: async (username: string, password: string): Promise<void> => {
     const params = new URLSearchParams();
     params.append('username', username);
     params.append('password', password);
-    const { data } = await api.post<Token>('/token', params, {
+    await api.post('/token', params, {
       headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
     });
-    return data;
   },
 
   /**
-   * Registers a new user and retrieves a JWT token.
+   * Registers a new user and establishes the cookie-backed session.
    * @param username The new user's username.
    * @param email The new user's email.
    * @param password The new user's password.
    */
-  register: async (username: string, email: string, password: string): Promise<Token> => {
-    const { data } = await api.post<Token>('/api/v1/auth/register', {
+  register: async (username: string, email: string, password: string): Promise<void> => {
+    await api.post('/api/v1/auth/register', {
       username,
       email,
       password,
     });
-    return data;
   },
 
   /**
@@ -72,6 +101,14 @@ export const authApi = {
   getCurrentUser: async (): Promise<User> => {
     const { data } = await api.get<User>('/api/v1/users/me');
     return data;
+  },
+
+  refresh: async (): Promise<void> => {
+    await api.post('/api/v1/auth/refresh');
+  },
+
+  logout: async (): Promise<void> => {
+    await api.post('/api/v1/auth/logout');
   },
 
   /**

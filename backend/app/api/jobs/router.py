@@ -7,7 +7,7 @@ import asyncio
 from fastapi import APIRouter, Depends, HTTPException
 
 from app.models.models import User, BlogDigestRequest, BlogDigestResponse, TicketReference, BlogPost
-from app.core.auth import get_current_user, USERS_DB
+from app.core.auth import get_current_user, USERS_DB, require_csrf_for_cookie_auth
 from app.services.ai_summary import AISummaryService
 from app.services.blog_scraper import BlogScraper
 from app.services.jira import JiraService
@@ -110,7 +110,8 @@ async def run_automated_blog_digest() -> None:
 @router.post("/api/v1/jobs/blog-digest", response_model=BlogDigestResponse)
 async def trigger_blog_digest(
     request: BlogDigestRequest,
-    current_user: User = Depends(get_current_user)
+    current_user: User = Depends(get_current_user),
+    _: None = Depends(require_csrf_for_cookie_auth),
 ) -> BlogDigestResponse:
     """
     Manual trigger for the NHI Blog Digest job.

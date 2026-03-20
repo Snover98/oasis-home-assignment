@@ -12,6 +12,7 @@ test.describe('Authentication Flow', () => {
     // Should redirect to dashboard
     await expect(page).toHaveURL('/dashboard');
     await expect(page.locator('h1')).toContainText('IdentityHub NHI');
+    expect(await page.evaluate(() => window.localStorage.getItem('token'))).toBeNull();
   });
 
   test('should show error with invalid credentials', async ({ page }) => {
@@ -42,5 +43,6 @@ test.describe('Authentication Flow', () => {
     // Should redirect to dashboard
     await expect(page).toHaveURL('/dashboard');
     await expect(page.locator('h1')).toContainText('IdentityHub NHI');
+    expect(await page.evaluate(() => window.localStorage.getItem('token'))).toBeNull();
   });
 });

@@ -26,7 +26,14 @@ class Settings(BaseSettings):
     # Authentication Settings
     SECRET_KEY: str = "" # In production, this must be a strong, random value set in .env
     ALGORITHM: str = "HS256"
-    ACCESS_TOKEN_EXPIRE_MINUTES: int = 60
+    ACCESS_TOKEN_EXPIRE_MINUTES: int = 15
+    REFRESH_TOKEN_EXPIRE_MINUTES: int = 60 * 24 * 7
+    ACCESS_COOKIE_NAME: str = "oasis_access_token"
+    REFRESH_COOKIE_NAME: str = "oasis_refresh_token"
+    CSRF_COOKIE_NAME: str = "oasis_csrf_token"
+    CSRF_HEADER_NAME: str = "X-CSRF-Token"
+    COOKIE_SECURE: bool = False
+    COOKIE_DOMAIN: str | None = None
 
     # External Services
     OASIS_BLOG_URL: str = "https://www.oasis.security"

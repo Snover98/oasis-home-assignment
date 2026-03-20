@@ -33,5 +33,6 @@ test.describe('Dashboard and Jira Flow', () => {
     // Click logout
     await page.click('button:has-text("Logout")');
     await expect(page).toHaveURL('/login');
+    expect(await page.evaluate(() => window.localStorage.getItem('token'))).toBeNull();
   });
 });

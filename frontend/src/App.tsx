@@ -3,19 +3,46 @@
  * Sets up the routing structure and protected route logic for the application.
  */
 
-import React from 'react';
+import React, { useEffect, useState } from 'react';
 import { BrowserRouter as Router, Routes, Route, Navigate } from 'react-router-dom';
+import { authApi } from './api';
 import Login from './pages/login';
 import Register from './pages/register';
 import Dashboard from './pages/dashboard';
 
 /**
- * A wrapper component that checks for the existence of an auth token.
- * Redirects to the login page if the user is not authenticated.
+ * A wrapper component that checks whether the browser session is authenticated.
  */
 const ProtectedRoute = ({ children }: { children: React.ReactNode }) => {
-  const token = localStorage.getItem('token');
-  if (!token) {
+  const [status, setStatus] = useState<'loading' | 'authenticated' | 'unauthenticated'>('loading');
+
+  useEffect(() => {
+    let active = true;
+
+    const verifySession = async () => {
+      try {
+        await authApi.getCurrentUser();
+        if (active) {
+          setStatus('authenticated');
+        }
+      } catch {
+        if (active) {
+          setStatus('unauthenticated');
+        }
+      }
+    };
+
+    verifySession();
+    return () => {
+      active = false;
+    };
+  }, []);
+
+  if (status === 'loading') {
+    return <div style={{ padding: '4rem', textAlign: 'center' }}>Loading session...</div>;
+  }
+
+  if (status === 'unauthenticated') {
     return <Navigate to="/login" replace />;
   }
   return <>{children}</>;

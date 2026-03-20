@@ -59,7 +59,3 @@ export interface Ticket {
 /**
  * Represents the JWT authentication token received upon successful login.
  */
-export interface Token {
-  access_token: string;
-  token_type: string;
-}

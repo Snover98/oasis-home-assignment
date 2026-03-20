@@ -8,8 +8,8 @@ import jwt
 import secrets
 import uuid
 from datetime import datetime, timedelta, timezone
-from fastapi import Depends, HTTPException, status
-from fastapi.security import OAuth2PasswordBearer, APIKeyHeader
+from fastapi import Depends, HTTPException, Request, Response, status
+from fastapi.security import APIKeyHeader
 from app.models.models import User, UserInDB, UserCreate, APIKey, StoredAPIKey
 from app.core.security import verify_password, get_password_hash, get_secret_hash, verify_secret
 from app.core.config import settings
@@ -54,8 +54,6 @@ USERS_DB: dict[str, UserInDB] = {
     )
 }
 
-# OAuth2 scheme for token retrieval
-oauth2_scheme = OAuth2PasswordBearer(tokenUrl="token", auto_error=False)
 # API Key scheme for programmatic access
 api_key_header = APIKeyHeader(name="X-API-Key", auto_error=False)
 
@@ -143,6 +141,122 @@ def create_access_token(data: dict[str, Any], expires_delta: timedelta) -> str:
     encoded_jwt = jwt.encode(to_encode, settings.SECRET_KEY, algorithm=settings.ALGORITHM)
     return encoded_jwt
 
+def create_refresh_token(data: dict[str, Any], expires_delta: timedelta) -> str:
+    """
+    Creates a JWT refresh token for a user.
+    """
+    return create_access_token(data=data, expires_delta=expires_delta)
+
+def create_csrf_token() -> str:
+    """
+    Creates a CSRF token to be sent as a readable cookie.
+    """
+    return secrets.token_urlsafe(32)
+
+def _decode_token(token: str, expected_type: str) -> dict[str, Any]:
+    try:
+        payload = jwt.decode(token, settings.SECRET_KEY, algorithms=[settings.ALGORITHM])
+    except jwt.PyJWTError as e:
+        raise __credentials_exception(reason=str(e))
+
+    token_type = payload.get("type")
+    if token_type != expected_type:
+        raise __credentials_exception(reason=f"Invalid token type: expected {expected_type}")
+
+    return payload
+
+def _get_bearer_token_from_request(request: Request) -> str | None:
+    auth_header = request.headers.get("Authorization")
+    if not auth_header:
+        return None
+
+    scheme, _, token = auth_header.partition(" ")
+    if scheme.lower() != "bearer" or not token:
+        return None
+
+    return token
+
+def set_auth_cookies(response: Response, access_token: str, refresh_token: str, csrf_token: str) -> None:
+    cookie_kwargs = {
+        "httponly": True,
+        "secure": settings.COOKIE_SECURE,
+        "samesite": "lax",
+        "path": "/",
+        "domain": settings.COOKIE_DOMAIN,
+    }
+    response.set_cookie(
+        key=settings.ACCESS_COOKIE_NAME,
+        value=access_token,
+        max_age=settings.ACCESS_TOKEN_EXPIRE_MINUTES * 60,
+        **cookie_kwargs,
+    )
+    response.set_cookie(
+        key=settings.REFRESH_COOKIE_NAME,
+        value=refresh_token,
+        max_age=settings.REFRESH_TOKEN_EXPIRE_MINUTES * 60,
+        **cookie_kwargs,
+    )
+    response.set_cookie(
+        key=settings.CSRF_COOKIE_NAME,
+        value=csrf_token,
+        max_age=settings.REFRESH_TOKEN_EXPIRE_MINUTES * 60,
+        httponly=False,
+        secure=settings.COOKIE_SECURE,
+        samesite="lax",
+        path="/",
+        domain=settings.COOKIE_DOMAIN,
+    )
+
+def clear_auth_cookies(response: Response) -> None:
+    for cookie_name in (
+        settings.ACCESS_COOKIE_NAME,
+        settings.REFRESH_COOKIE_NAME,
+        settings.CSRF_COOKIE_NAME,
+    ):
+        response.delete_cookie(
+            key=cookie_name,
+            path="/",
+            domain=settings.COOKIE_DOMAIN,
+        )
+
+def issue_auth_cookies(response: Response, username: str) -> None:
+    access_token_expires = timedelta(minutes=settings.ACCESS_TOKEN_EXPIRE_MINUTES)
+    refresh_token_expires = timedelta(minutes=settings.REFRESH_TOKEN_EXPIRE_MINUTES)
+    access_token = create_access_token(
+        data={"sub": username, "type": "access"},
+        expires_delta=access_token_expires,
+    )
+    refresh_token = create_refresh_token(
+        data={"sub": username, "type": "refresh"},
+        expires_delta=refresh_token_expires,
+    )
+    set_auth_cookies(
+        response=response,
+        access_token=access_token,
+        refresh_token=refresh_token,
+        csrf_token=create_csrf_token(),
+    )
+
+def _user_from_access_token(token: str) -> User:
+    payload = _decode_token(token, expected_type="access")
+    username: str | None = payload.get("sub")
+    if username is None:
+        raise __credentials_exception(reason="Invalid username in payload")
+
+    user = USERS_DB.get(username)
+    if user is None:
+        raise __credentials_exception(reason=f"User {username} not found")
+
+    return _to_public_user(user)
+
+def get_refresh_token_subject(token: str) -> str:
+    payload = _decode_token(token, expected_type="refresh")
+    username: str | None = payload.get("sub")
+    if username is None:
+        raise __credentials_exception(reason="Invalid username in payload")
+
+    return username
+
 def __credentials_exception(reason: str = '') -> HTTPException:
     detail = "Could not validate credentials"
     if reason:
@@ -154,13 +268,13 @@ def __credentials_exception(reason: str = '') -> HTTPException:
         headers={"WWW-Authenticate": "Bearer"},
     )
 
-async def get_current_user(token: str = Depends(oauth2_scheme)) -> User:
+async def get_current_user(request: Request) -> User:
     """
     Dependency injection function to retrieve the currently authenticated user
     from a JWT token.
 
     Args:
-        token (str): The JWT access token from the request header.
+        request (Request): The incoming request containing either auth cookies or a bearer header.
 
     Returns:
         User: The authenticated User model.
@@ -168,19 +282,11 @@ async def get_current_user(token: str = Depends(oauth2_scheme)) -> User:
     Raises:
         HTTPException: If the token is invalid or the user is not found.
     """
-    try:
-        payload = jwt.decode(token, settings.SECRET_KEY, algorithms=[settings.ALGORITHM])
-        username: str | None = payload.get("sub")
-        if username is None:
-            raise __credentials_exception(reason="Invalid username in payload")
-    except jwt.PyJWTError as e:
-        raise __credentials_exception(reason=str(e))
-    
-    user = USERS_DB.get(username)
-    if user is None:
-        raise __credentials_exception(reason=f"User {username} not found")
-    
-    return _to_public_user(user)
+    token = request.cookies.get(settings.ACCESS_COOKIE_NAME) or _get_bearer_token_from_request(request)
+    if not token:
+        raise __credentials_exception(reason="No access token provided")
+
+    return _user_from_access_token(token)
 
 async def get_user_from_api_key(api_key: Optional[str] = Depends(api_key_header)) -> User:
     """
@@ -213,16 +319,17 @@ async def get_user_from_api_key(api_key: Optional[str] = Depends(api_key_header)
     )
 
 async def get_any_user(
-    token: Optional[str] = Depends(oauth2_scheme),
+    request: Request,
     api_key: Optional[str] = Depends(api_key_header)
 ) -> User:
     """
     Dependency that allows authentication via either JWT token OR API Key.
     Useful for endpoints that are accessed by both the UI and external systems.
     """
+    token = request.cookies.get(settings.ACCESS_COOKIE_NAME) or _get_bearer_token_from_request(request)
     if token:
         try:
-            return await get_current_user(token)
+            return _user_from_access_token(token)
         except HTTPException:
             if not api_key:
                 raise
@@ -231,3 +338,18 @@ async def get_any_user(
         return await get_user_from_api_key(api_key)
     
     raise __credentials_exception(reason="No valid authentication provided (Token or API Key)")
+
+async def require_csrf_for_cookie_auth(request: Request) -> None:
+    """
+    Requires a matching CSRF header when a browser session cookie is used.
+    """
+    if settings.ACCESS_COOKIE_NAME not in request.cookies:
+        return
+
+    csrf_cookie = request.cookies.get(settings.CSRF_COOKIE_NAME)
+    csrf_header = request.headers.get(settings.CSRF_HEADER_NAME)
+    if not csrf_cookie or not csrf_header or csrf_cookie != csrf_header:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="CSRF validation failed",
+        )

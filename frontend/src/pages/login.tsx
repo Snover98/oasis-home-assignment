@@ -1,7 +1,6 @@
 /**
  * Login Page Component.
- * Provides a simple username/password form to authenticate users and
- * store their JWT token in localStorage.
+ * Provides a simple username/password form to authenticate users.
  */
 
 import React, { useState } from 'react';
@@ -27,9 +26,7 @@ const Login: React.FC = () => {
     setLoading(true);
     setError(undefined);
     try {
-      const { access_token } = await authApi.login(username, password);
-      // Store the JWT token for use in subsequent authenticated requests
-      localStorage.setItem('token', access_token);
+      await authApi.login(username, password);
       navigate('/dashboard');
     } catch {
       setError('Invalid username or password');
@@ -95,4 +92,3 @@ const Login: React.FC = () => {
 };
 
 export default Login;
-
