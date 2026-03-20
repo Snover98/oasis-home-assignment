@@ -10,8 +10,15 @@ class APIKey(BaseModel):
     """Represents an API key for programmatic access."""
     id: str
     name: str
-    key: str
     created_at: datetime
+
+class APIKeyWithSecret(APIKey):
+    """Represents a newly created API key including the one-time secret value."""
+    key: str
+
+class StoredAPIKey(APIKey):
+    """Internal representation of an API key stored by hash only."""
+    key_hash: str
 
 class APIKeyCreate(BaseModel):
     """Request schema for creating a new API key."""
@@ -108,6 +115,7 @@ class UserCreate(BaseModel):
 class UserInDB(User):
     """Internal representation of a user stored in the database."""
     password_hash: str
+    api_keys: list[StoredAPIKey] = Field(default_factory=list)
 
 class Token(BaseModel):
     """JWT Token response schema."""

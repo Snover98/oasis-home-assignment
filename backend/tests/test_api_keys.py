@@ -18,6 +18,7 @@ async def test_api_keys_flow():
         initial_keys = list_response.json()
         assert len(initial_keys) == 1
         assert initial_keys[0]["name"] == "Default Key"
+        assert "key" not in initial_keys[0]
 
         # 3. Create a new API key
         create_response = await ac.post("/api/v1/api-keys", json={"name": "Test Key"}, headers=headers)
@@ -30,6 +31,7 @@ async def test_api_keys_flow():
         # 4. Verify it was added
         list_response_2 = await ac.get("/api/v1/api-keys", headers=headers)
         assert len(list_response_2.json()) == 2
+        assert all("key" not in api_key for api_key in list_response_2.json())
 
         # 5. Revoke the key
         delete_response = await ac.delete(f"/api/v1/api-keys/{key_id}", headers=headers)

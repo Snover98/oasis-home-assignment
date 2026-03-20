@@ -4,7 +4,7 @@
  */
 
 import axios from 'axios';
-import type { Token, Project, Ticket, User, APIKey } from '../models';
+import type { Token, Project, Ticket, User, APIKey, APIKeyWithSecret } from '../models';
 
 /**
  * The base URL for all API requests, loaded from environment variables.
@@ -160,8 +160,8 @@ export const apiKeysApi = {
    * Generates a new API key.
    * @param name The name of the API key.
    */
-  generate: async (name: string): Promise<APIKey> => {
-    const { data } = await api.post<APIKey>('/api/v1/api-keys', { name });
+  generate: async (name: string): Promise<APIKeyWithSecret> => {
+    const { data } = await api.post<APIKeyWithSecret>('/api/v1/api-keys', { name });
     return data;
   },
 

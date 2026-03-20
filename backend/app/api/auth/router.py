@@ -15,7 +15,7 @@ from pydantic_client.async_client import HttpxWebClient
 from app.models.models import (
     User, Token, JiraConfig, AtlassianTokenResponse, AtlassianResourceResponse,
     AtlassianTokenExchangeRequest, AuthUrlResponse, AuthCallbackResponse, UserCreate,
-    APIKey, APIKeyCreate
+    APIKey, APIKeyCreate, APIKeyWithSecret, StoredAPIKey
 )
 from app.core.config import settings
 from app.core.auth import (
@@ -23,8 +23,10 @@ from app.core.auth import (
     create_access_token, 
     get_current_user, 
     register_user,
-    USERS_DB
+    USERS_DB,
+    _to_public_api_key,
 )
+from app.core.security import get_secret_hash
 
 router = APIRouter()
 
@@ -208,26 +210,34 @@ async def get_api_keys(current_user: User = Depends(get_current_user)) -> list[A
     """
     return current_user.api_keys
 
-@router.post("/api/v1/api-keys", response_model=APIKey, tags=["api-keys"])
+@router.post("/api/v1/api-keys", response_model=APIKeyWithSecret, tags=["api-keys"])
 async def create_api_key(
     key_data: APIKeyCreate,
     current_user: User = Depends(get_current_user)
-) -> APIKey:
+) -> APIKeyWithSecret:
     """
     Generates and stores a new API key for the user.
+    The plain-text key is only returned once at creation time.
     """
-    new_key = APIKey(
+    plain_text_key = f"oasis_key_{secrets.token_urlsafe(16)}"
+    stored_key = StoredAPIKey(
         id=str(uuid.uuid4()),
         name=key_data.name,
-        key=f"oasis_key_{secrets.token_urlsafe(16)}",
+        key_hash=get_secret_hash(plain_text_key),
         created_at=datetime.now(timezone.utc)
     )
     
     # Update the DB record
     user_in_db = USERS_DB[current_user.username]
-    user_in_db.api_keys.append(new_key)
+    user_in_db.api_keys.append(stored_key)
     
-    return new_key
+    public_key = _to_public_api_key(stored_key)
+    return APIKeyWithSecret(
+        id=public_key.id,
+        name=public_key.name,
+        created_at=public_key.created_at,
+        key=plain_text_key,
+    )
 
 @router.delete("/api/v1/api-keys/{key_id}", status_code=status.HTTP_204_NO_CONTENT, tags=["api-keys"])
 async def revoke_api_key(

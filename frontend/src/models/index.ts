@@ -16,8 +16,11 @@ export interface JiraConfig {
 export interface APIKey {
   id: string;
   name: string;
-  key: string;
   created_at: string;
+}
+
+export interface APIKeyWithSecret extends APIKey {
+  key: string;
 }
 
 /**
