@@ -194,6 +194,15 @@ const Dashboard: React.FC = () => {
     navigate('/login');
   };
 
+  if (!user) {
+    return (
+      <div style={{ padding: '4rem', textAlign: 'center', fontFamily: 'sans-serif', color: '#666' }}>
+        <RefreshCw size={48} className="animate-spin" style={{ marginBottom: '1rem', opacity: 0.5 }} />
+        <p>Loading your dashboard...</p>
+      </div>
+    );
+  }
+
   const renderHeader = () => (
     <header style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '2rem', paddingBottom: '1rem', borderBottom: '1px solid #eee' }}>
       <div>
@@ -225,6 +234,7 @@ const Dashboard: React.FC = () => {
           loading={loading}
           connectionError={connectionError}
           handleConnectJira={handleConnectJira}
+          apiKey={user?.api_key}
         />
       ) : (
         <MainContent 
