@@ -53,13 +53,12 @@ An automated background process (Trigger/Scheduled) that:
 ## Getting Started
 
 ### Prerequisites
-- **Docker** with the `docker compose` plugin.
-- Optional for non-container local runs: **Python 3.13+** with [uv](https://docs.astral.sh/uv/), **Node.js**, and **npm**.
+- **Docker** with the `docker compose` plugin
+- Optional for legacy local runs: **Python 3.13+** with [uv](https://docs.astral.sh/uv/), **Node.js**, and **npm**
 
-### Running the Project
+### Run with Docker Compose
 
-#### 1. Full Stack with Docker Compose
-From the repository root, run:
+From the repository root:
 ```bash
 docker compose up --build
 ```
@@ -68,6 +67,8 @@ This starts:
 - frontend on `http://localhost:5173`
 - backend on `http://localhost:8000`
 - redis on `localhost:6379`
+
+The backend uses the compose-managed Redis container via `redis://redis:6379/0`.
 
 To stop the stack:
 ```bash
@@ -79,7 +80,7 @@ To stop and remove Redis-backed state:
 docker compose down -v
 ```
 
-#### 2. Legacy Local Run
+### Legacy Local Run
 
 Backend:
 ```bash
@@ -97,3 +98,30 @@ npm run dev
 
 For local non-Docker runs, Redis must still be available at `redis://localhost:6379/0` unless `REDIS_URL` is overridden.
 
+## Testing
+
+Backend:
+
+```bash
+cd backend
+uv run pytest
+```
+
+Frontend e2e:
+
+```bash
+cd frontend
+npm run test:e2e
+```
+
+Frontend component tests:
+
+```bash
+cd frontend
+npm run test:component
+```
+
+## Project Structure
+
+- [backend/README.md](/Users/assafhaikbarouch/Work/projects/oasis-home-assignment/backend/README.md): backend-specific runtime notes
+- [frontend/README.md](/Users/assafhaikbarouch/Work/projects/oasis-home-assignment/frontend/README.md): frontend-specific runtime and test notes

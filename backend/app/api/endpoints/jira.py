@@ -14,6 +14,10 @@ router = APIRouter(tags=["jira"])
 
 
 async def _get_jira_service_for_reads(current_user: User) -> JiraService:
+    """
+    Returns a Jira service for read endpoints.
+    Uses live Jira credentials when available and falls back to the stored cache context otherwise.
+    """
     cache_context = await get_user_store().get_jira_cache_context(current_user.username)
     if current_user.jira_config:
         return JiraService(
@@ -33,6 +37,10 @@ async def _get_jira_service_for_reads(current_user: User) -> JiraService:
 
 
 async def _get_jira_service_for_writes(current_user: User) -> JiraService:
+    """
+    Returns a Jira service for write endpoints.
+    Writes require both live Jira credentials and cache context for cache invalidation.
+    """
     if not current_user.jira_config:
         raise HTTPException(status_code=400, detail="Jira not connected")
 
@@ -49,7 +57,8 @@ async def _get_jira_service_for_writes(current_user: User) -> JiraService:
 @router.get("/api/v1/jira/projects", response_model=list[Project])
 async def get_jira_projects(current_user: User = Depends(get_current_user)) -> list[Project]:
     """
-    Fetches all projects from the user's connected Jira workspace.
+    Fetches Jira projects for the current user.
+    Returns live Jira data when available, otherwise returns cached projects if failover data exists.
 
     Args:
         current_user (User): The currently authenticated user (from dependency).
@@ -58,7 +67,7 @@ async def get_jira_projects(current_user: User = Depends(get_current_user)) -> l
         list[Project]: A list of Jira projects.
 
     Raises:
-        HTTPException: If Jira is not connected for the user.
+        HTTPException: If neither live Jira access nor cached project data is available.
     """
     jira_service = await _get_jira_service_for_reads(current_user)
     try:
@@ -108,6 +117,7 @@ async def get_recent_jira_tickets(
 ) -> list[Ticket]:
     """
     Fetches the 10 most recent tickets for a specific Jira project.
+    Returns live Jira data when available, otherwise returns cached tickets for the selected project.
 
     Args:
         project_key (str): The key of the Jira project to search in.
@@ -117,7 +127,7 @@ async def get_recent_jira_tickets(
         list[Ticket]: A list of the most recent tickets.
 
     Raises:
-        HTTPException: If Jira is not connected for the user.
+        HTTPException: If neither live Jira access nor cached tickets are available.
     """
     jira_service = await _get_jira_service_for_reads(current_user)
     try:

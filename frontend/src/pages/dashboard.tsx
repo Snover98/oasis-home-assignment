@@ -42,8 +42,8 @@ const Dashboard: React.FC = () => {
   const navigate = useNavigate();
 
   /**
-   * Fetches the current user's profile and checks if Jira is connected.
-   * If connected, it automatically fetches available projects.
+   * Fetches the current user's profile and then attempts to load projects.
+   * The dashboard can stay usable in read-only mode when cached Jira data exists.
    */
   const fetchUserData = useCallback(async () => {
     try {
@@ -91,7 +91,7 @@ const Dashboard: React.FC = () => {
    * @param code The authorization code from Atlassian.
    */
   const handleJiraCallback = useCallback(async (code: string) => {
-    // Avoid double processing in development mode
+    // Avoid double-processing the OAuth callback in React StrictMode.
     if (callbackProcessed.current) return;
     callbackProcessed.current = true;
     
@@ -99,7 +99,7 @@ const Dashboard: React.FC = () => {
     setConnectionError(undefined);
     try {
       await authApi.jiraAuthCallback(code);
-      // Clean up URL and refresh local state
+      // Clean up the callback URL and reload dashboard data.
       navigate('/dashboard', { replace: true });
       await fetchUserData();
     } catch {
@@ -129,7 +129,7 @@ const Dashboard: React.FC = () => {
     setConnectionError(undefined);
     try {
       const { url } = await authApi.getJiraAuthUrl();
-      // Redirect to Atlassian's consent page
+      // Redirect the browser to Atlassian's OAuth consent page.
       window.location.href = url;
     } catch {
       setConnectionError('Failed to get Jira authorization URL. Please ensure JIRA_CLIENT_ID is configured.');
@@ -138,13 +138,14 @@ const Dashboard: React.FC = () => {
   };
 
   /**
-   * Fetches the 10 most recent tickets for the currently selected project.
+   * Fetches the recent tickets for the currently selected project.
+   * Guards against stale responses when the user switches projects quickly.
    */
   const fetchRecentTickets = useCallback(async () => {
     if (!selectedProject) return;
     const requestId = latestTicketsRequestRef.current + 1;
     latestTicketsRequestRef.current = requestId;
-    setRecentTicketsError(undefined); // Clear previous error
+    setRecentTicketsError(undefined);
     setRecentTickets([]);
     try {
       const tickets = await jiraApi.getRecentTickets(selectedProject);
@@ -175,7 +176,7 @@ const Dashboard: React.FC = () => {
     setFindingError(undefined);
     try {
       await jiraApi.createTicket(selectedProject, title, description);
-      // Clear form and refresh list
+      // Clear the form and refresh the selected project's recent tickets.
       setTitle('');
       setDescription('');
       fetchRecentTickets();
@@ -209,7 +210,7 @@ const Dashboard: React.FC = () => {
   };
 
   /**
-   * Logs the user out by clearing the token and redirecting to the login page.
+   * Logs the user out and redirects to the login page.
    */
   const handleLogout = async () => {
     try {

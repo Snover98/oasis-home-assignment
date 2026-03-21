@@ -52,8 +52,9 @@ app = FastAPI(
     lifespan=lifespan
 )
 
-# Configure Cross-Origin Resource Sharing (CORS)
-# Allows the React frontend running on port 5173 to communicate with this API.
+# Configure Cross-Origin Resource Sharing (CORS).
+# The browser-facing frontend is served from localhost:5173 in both legacy local runs
+# and the Docker Compose development workflow.
 app.add_middleware(
     CORSMiddleware,
     allow_origins=["http://localhost:5173"],

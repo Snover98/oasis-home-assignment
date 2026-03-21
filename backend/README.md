@@ -12,7 +12,7 @@ From the repository root:
 docker compose up --build
 ```
 
-The backend will be available on `http://localhost:8000` and will connect to the compose-managed Redis service.
+The backend will be available on `http://localhost:8000` and will connect to the compose-managed Redis service at `redis://redis:6379/0`.
 
 ### Development (CLI)
 
@@ -28,6 +28,19 @@ Or you can execute the main script:
 uv run --env-file .env python app/main.py
 ```
 
+For local non-Docker runs, Redis must be available at `redis://localhost:6379/0` unless `REDIS_URL` is overridden.
+
 ### Development (VS Code)
 
-If you are using Visual Studio Code, you can use the "Backend: Uvicorn" run configuration. It is pre-configured in `.vscode/launch.json` to load the `.env` file automatically via the `"envFile"` property.
+If you are using Visual Studio Code:
+
+- Use `Docker Compose: Up` for the compose-first workflow
+- Use `Backend: Uvicorn (Legacy)` only for direct local backend debugging
+
+## Testing
+
+Run backend tests from the `backend` directory:
+
+```bash
+uv run pytest
+```
