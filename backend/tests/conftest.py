@@ -16,7 +16,7 @@ from app.core.config import settings
 from app.core.auth import close_user_store, configure_user_store
 from app.core.security import get_password_hash, get_secret_hash
 from app.core.user_store import RedisUserStore
-from app.models.models import StoredAPIKey, JiraConfig
+from app.models.models import JiraCacheContext, StoredAPIKey, JiraConfig
 
 
 @pytest_asyncio.fixture(autouse=True)
@@ -37,6 +37,7 @@ async def create_user(fake_user_store):
         password: str,
         api_keys: list[tuple[str, str]] | None = None,
         jira_config: JiraConfig | None = None, # Add jira_config parameter
+        jira_cache_context: JiraCacheContext | None = None,
     ):
         user = await fake_user_store.create_user(
             username=username,
@@ -59,6 +60,8 @@ async def create_user(fake_user_store):
         # Set Jira config if provided
         if jira_config:
             user = await fake_user_store.set_jira_config(username, jira_config)
+        if jira_cache_context:
+            await fake_user_store.set_jira_cache_context(username, jira_cache_context)
 
         # The user returned by create_user, add_api_key, and set_jira_config is the composed UserInDB
         return user

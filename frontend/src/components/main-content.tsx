@@ -3,6 +3,7 @@ import { RefreshCw, Send, ExternalLink } from 'lucide-react';
 import type { Project, Ticket } from '../models';
 
 export interface MainContentProps {
+  jiraConnected: boolean;
   projects: Project[];
   selectedProject: string;
   setSelectedProject: (key: string) => void;
@@ -20,6 +21,7 @@ export interface MainContentProps {
 }
 
 const MainContent: React.FC<MainContentProps> = ({
+  jiraConnected,
   projects,
   selectedProject,
   setSelectedProject,
@@ -78,17 +80,22 @@ const MainContent: React.FC<MainContentProps> = ({
               />
             </div>
             {findingError && <div style={{ color: 'red', marginBottom: '1rem' }}>{findingError}</div>}
+            {!jiraConnected && (
+              <div style={{ color: '#8a6d3b', marginBottom: '1rem' }}>
+                Jira is disconnected. Showing cached projects and tickets in read-only mode.
+              </div>
+            )}
             <button
               type="submit"
-              disabled={loading || !selectedProject || !title.trim()}
+              disabled={loading || !jiraConnected || !selectedProject || !title.trim()}
               style={{ 
                 width: '100%', 
                 padding: '0.75rem', 
-                backgroundColor: (loading || !selectedProject || !title.trim()) ? '#ccc' : '#0052cc', 
+                backgroundColor: (loading || !jiraConnected || !selectedProject || !title.trim()) ? '#ccc' : '#0052cc', 
                 color: '#fff', 
                 border: 'none', 
                 borderRadius: '4px', 
-                cursor: (loading || !selectedProject || !title.trim()) ? 'not-allowed' : 'pointer', 
+                cursor: (loading || !jiraConnected || !selectedProject || !title.trim()) ? 'not-allowed' : 'pointer', 
                 display: 'flex', 
                 justifyContent: 'center', 
                 alignItems: 'center', 
@@ -104,7 +111,18 @@ const MainContent: React.FC<MainContentProps> = ({
             <p style={{ fontSize: '0.9rem', color: '#666' }}>Automatically fetch and summarize the latest blog post from oasis.security.</p>
             <button
               onClick={handleTriggerBlogDigest}
-              style={{ padding: '0.5rem 1rem', backgroundColor: '#34a853', color: '#fff', border: 'none', borderRadius: '4px', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: '0.5rem' }}
+              disabled={!jiraConnected || loading}
+              style={{
+                padding: '0.5rem 1rem',
+                backgroundColor: (!jiraConnected || loading) ? '#9cc9a8' : '#34a853',
+                color: '#fff',
+                border: 'none',
+                borderRadius: '4px',
+                cursor: (!jiraConnected || loading) ? 'not-allowed' : 'pointer',
+                display: 'flex',
+                alignItems: 'center',
+                gap: '0.5rem'
+              }}
             >
               <RefreshCw size={18} /> Trigger Blog Digest
             </button>

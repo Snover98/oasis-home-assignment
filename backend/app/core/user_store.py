@@ -11,7 +11,7 @@ from redis.asyncio import Redis
 
 import json
 from app.core.security import get_secret_hash, verify_secret
-from app.models.models import JiraConfig, Project, StoredAPIKey, UserInDB, UserCore, Ticket
+from app.models.models import JiraCacheContext, JiraConfig, Project, StoredAPIKey, UserInDB, UserCore, Ticket
 
 
 class RedisUserStore:
@@ -29,6 +29,10 @@ class RedisUserStore:
     @staticmethod
     def _user_jira_config_key(username: str) -> str:
         return f"user:{username}:jira_config"
+
+    @staticmethod
+    def _user_jira_cache_context_key(username: str) -> str:
+        return f"user:{username}:jira_cache_context"
     
     @staticmethod
     def _user_api_keys_set_key(username: str) -> str:
@@ -98,6 +102,22 @@ class RedisUserStore:
             await self.redis.delete(self._user_jira_config_key(username)) # Delete if None
         
         return await self.get_user(username)
+
+    async def get_jira_cache_context(self, username: str) -> JiraCacheContext | None:
+        cache_context_raw = await self.redis.get(self._user_jira_cache_context_key(username))
+        if cache_context_raw is None:
+            return None
+        return JiraCacheContext.model_validate_json(cache_context_raw)
+
+    async def set_jira_cache_context(self, username: str, cache_context: JiraCacheContext | None) -> None:
+        if cache_context is None:
+            await self.redis.delete(self._user_jira_cache_context_key(username))
+            return
+
+        await self.redis.set(
+            self._user_jira_cache_context_key(username),
+            cache_context.model_dump_json(),
+        )
 
     async def add_api_key(self, username: str, api_key: StoredAPIKey) -> UserInDB | None:
         if not await self.user_exists(username):

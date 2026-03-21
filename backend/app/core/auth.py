@@ -9,7 +9,7 @@ import secrets
 from datetime import datetime, timedelta, timezone
 from fastapi import Depends, HTTPException, Request, Response, status
 from fastapi.security import APIKeyHeader
-from app.models.models import User, UserInDB, UserCreate, APIKey, StoredAPIKey
+from app.models.models import JiraCacheContext, User, UserInDB, UserCreate, APIKey, StoredAPIKey
 from app.core.security import verify_password, get_password_hash, get_secret_hash
 from app.core.config import settings
 from typing import Any, Optional
@@ -230,6 +230,10 @@ async def get_user_record(username: str) -> UserInDB | None:
 
 async def update_user_jira_config(username: str, jira_config: Any) -> UserInDB | None:
     return await get_user_store().set_jira_config(username, jira_config)
+
+
+async def update_user_jira_cache_context(username: str, cache_context: JiraCacheContext | None) -> None:
+    await get_user_store().set_jira_cache_context(username, cache_context)
 
 
 async def append_user_api_key(username: str, api_key: StoredAPIKey) -> UserInDB | None:

@@ -37,6 +37,7 @@ const Dashboard: React.FC = () => {
   
   // Ref to track if the OAuth callback has been processed (prevents double-run in StrictMode)
   const callbackProcessed = React.useRef(false);
+  const latestTicketsRequestRef = React.useRef(0);
 
   const navigate = useNavigate();
 
@@ -48,20 +49,29 @@ const Dashboard: React.FC = () => {
     try {
       const userData = await authApi.getCurrentUser();
       setUser(userData);
-      
-      if (userData.jira_config) {
-        // Jira is connected, hide config and fetch projects
-        setShowConfig(false);
+
+      try {
         const projectsData = await jiraApi.getProjects();
         setProjects(projectsData);
+        setShowConfig(false);
         if (projectsData.length > 0) {
-          setSelectedProject(projectsData[0].key);
-        } else {
+          setSelectedProject((currentProject) =>
+            projectsData.some((project) => project.key === currentProject)
+              ? currentProject
+              : projectsData[0].key
+          );
+        } else if (userData.jira_config) {
           alert("Your Jira workspace has no projects. You will not be able to report findings until a project is created in Jira.");
         }
-      } else {
-        // Jira is not connected, show the connection prompt
-        setShowConfig(true);
+      } catch (projectsError: unknown) {
+        setProjects([]);
+        setRecentTickets([]);
+        if (userData.jira_config) {
+          setShowConfig(false);
+          setConnectionError('Failed to connect to Jira or fetch projects.');
+        } else {
+          setShowConfig(true);
+        }
       }
     } catch (err: unknown) {
       if (err && typeof err === 'object' && 'response' in err) {
@@ -132,13 +142,21 @@ const Dashboard: React.FC = () => {
    */
   const fetchRecentTickets = useCallback(async () => {
     if (!selectedProject) return;
+    const requestId = latestTicketsRequestRef.current + 1;
+    latestTicketsRequestRef.current = requestId;
     setRecentTicketsError(undefined); // Clear previous error
+    setRecentTickets([]);
     try {
       const tickets = await jiraApi.getRecentTickets(selectedProject);
-      setRecentTickets(tickets);
+      if (latestTicketsRequestRef.current === requestId) {
+        setRecentTickets(tickets);
+      }
     } catch (err: unknown) {
       console.error('Failed to fetch recent tickets:', err);
-      setRecentTicketsError('Failed to fetch recent tickets. Please check your Jira connection or project key.');
+      if (latestTicketsRequestRef.current === requestId) {
+        setRecentTickets([]);
+        setRecentTicketsError('Failed to fetch recent tickets. Please check your Jira connection or project key.');
+      }
     }
   }, [selectedProject]);
 
@@ -249,6 +267,7 @@ const Dashboard: React.FC = () => {
         </div>
       ) : (
         <MainContent 
+          jiraConnected={Boolean(user?.jira_config)}
           projects={projects}
           selectedProject={selectedProject}
           setSelectedProject={setSelectedProject}

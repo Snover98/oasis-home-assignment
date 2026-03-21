@@ -47,24 +47,35 @@ class JiraService:
     Handles credential management and data mapping between Jira API and internal models.
     """
 
-    def __init__(self, config: JiraConfig) -> None:
+    def __init__(
+        self,
+        config: JiraConfig | None,
+        cache_cloud_id: str | None = None,
+        cache_site_url: str | None = None,
+    ) -> None:
         """
         Initializes the Jira service with user-specific OAuth credentials.
 
         Args:
             config (JiraConfig): The user's Jira configuration including access token and cloud ID.
         """
-        self.config: JiraConfig = config # Store config for cache key
-        self.site_url = config.site_url or settings.ATLASSIAN_DEFAULT_SITE_URL
+        self.config = config
+        self.cloud_id = cache_cloud_id
+        self.site_url = (
+            cache_site_url
+            or settings.ATLASSIAN_DEFAULT_SITE_URL
+        )
         self.user_store: RedisUserStore = get_user_store() # Get the user store instance
  
-        self.api = JiraAPIClient(
-            base_url=f"{settings.ATLASSIAN_API_BASE_URL}/ex/jira/{config.cloud_id}",
-            headers={
-                "Authorization": f"Bearer {config.access_token}",
-                "Accept": "application/json",
-                "Content-Type": "application/json"
-            })
+        self.api: JiraAPIClient | None = None
+        if config and cache_cloud_id and config.access_token:
+            self.api = JiraAPIClient(
+                base_url=f"{settings.ATLASSIAN_API_BASE_URL}/ex/jira/{cache_cloud_id}",
+                headers={
+                    "Authorization": f"Bearer {config.access_token}",
+                    "Accept": "application/json",
+                    "Content-Type": "application/json"
+                })
 
     @staticmethod
     def issue_priority(priority: JiraIssuePriority | None) -> str:
@@ -90,6 +101,8 @@ class JiraService:
     )
     async def _get_projects_from_jira(self) -> list[Project]:
         """Internal helper to fetch projects from Jira with retry logic."""
+        if self.api is None:
+            raise HTTPException(status_code=400, detail="Jira not connected")
         projects = await self.api.get_projects()
         return [Project(id=p.id, key=p.key, name=p.name) for p in projects]
 
@@ -100,9 +113,16 @@ class JiraService:
         Returns:
             list[Project]: A list of simplified Project models.
         """
-        cloud_id = self.config.cloud_id
+        cloud_id = self.cloud_id
         if not cloud_id:
             raise HTTPException(status_code=500, detail="Jira Cloud ID missing for caching operations.")
+
+        if self.api is None:
+            cached_projects = await self.user_store.get_jira_projects_cache(cloud_id)
+            if cached_projects is not None:
+                logger.info("Returning cached Jira projects without an active Jira connection.")
+                return cached_projects
+            raise HTTPException(status_code=400, detail="Jira not connected and no cached projects available.")
 
         try:
             projects = await self._get_projects_from_jira()
@@ -119,7 +139,7 @@ class JiraService:
                 f"Attempting to retrieve project cache. Error: {e}"
             )
             cached_projects = await self.user_store.get_jira_projects_cache(cloud_id)
-            if cached_projects:
+            if cached_projects is not None:
                 logger.info("Returning cached Jira projects due to Jira failure.")
                 return cached_projects
             logger.error("Jira API failed and no cached projects are available.")
@@ -127,7 +147,7 @@ class JiraService:
         except HTTPException as e:
             logger.error(f"Jira API _get_projects_from_jira failed: {e.detail}. Attempting to retrieve project cache.")
             cached_projects = await self.user_store.get_jira_projects_cache(cloud_id)
-            if cached_projects:
+            if cached_projects is not None:
                 logger.info("Returning cached Jira projects due to Jira failure.")
                 return cached_projects
             logger.error("Jira API failed and no cached projects are available.")
@@ -135,7 +155,7 @@ class JiraService:
         except Exception as e:
             logger.error(f"An unexpected error occurred while fetching Jira projects: {e}. Attempting to retrieve project cache.")
             cached_projects = await self.user_store.get_jira_projects_cache(cloud_id)
-            if cached_projects:
+            if cached_projects is not None:
                 logger.info("Returning cached Jira projects due to unexpected error.")
                 return cached_projects
             logger.error("An unexpected error occurred and no cached projects are available.")
@@ -149,6 +169,8 @@ class JiraService:
         retry=tenacity.retry_if_exception_type((httpx.NetworkError, httpx.TimeoutException))
     )
     async def create_ticket(self, project_key: str, summary: str, description: str) -> TicketReference:
+        if self.api is None:
+            raise HTTPException(status_code=400, detail="Jira not connected")
         request = IssueCreateRequest(
             fields=IssueFields(
                 project=ProjectInfo(key=project_key),
@@ -164,7 +186,7 @@ class JiraService:
         response = await self.api.create_ticket(json=request)
         
         # Invalidate cache for recent tickets of this project
-        cloud_id = self.config.cloud_id
+        cloud_id = self.cloud_id
         if cloud_id: # Only invalidate if cloud_id is present
             await self.user_store.invalidate_jira_tickets_cache(cloud_id, project_key)
             logger.info(f"Invalidated Jira ticket cache for project {project_key}.")
@@ -180,6 +202,8 @@ class JiraService:
     )
     async def _get_recent_tickets_from_jira(self, project_key: str, limit: int) -> list[Ticket]:
         """Internal helper to fetch recent tickets from Jira with retry logic."""
+        if self.api is None:
+            raise HTTPException(status_code=400, detail="Jira not connected")
         data = await self.api.search_tickets(params=SearchParams(
             jql=f'project = "{project_key}" ORDER BY created DESC',
             maxResults=limit,
@@ -205,9 +229,16 @@ class JiraService:
         Fetches the most recent tickets for a specific project, with Redis caching and Jira retry.
         Always attempts to fetch from Jira first, falling back to cache only on Jira failure.
         """
-        cloud_id = self.config.cloud_id
+        cloud_id = self.cloud_id
         if not cloud_id: 
             raise HTTPException(status_code=500, detail="Jira Cloud ID missing for caching operations.")
+
+        if self.api is None:
+            cached_tickets = await self.user_store.get_jira_tickets_cache(cloud_id, project_key)
+            if cached_tickets is not None:
+                logger.info(f"Returning cached Jira tickets for {project_key} without an active Jira connection.")
+                return cached_tickets
+            raise HTTPException(status_code=400, detail="Jira not connected and no cached tickets available.")
 
         try:
             # Always try to fetch from Jira first
@@ -219,7 +250,7 @@ class JiraService:
             # Jira API failed after retries, now try the cache
             logger.warning(f"Jira API _get_recent_tickets_from_jira failed after multiple retries for project {project_key}. Attempting to retrieve from cache. Error: {e}")
             cached_tickets = await self.user_store.get_jira_tickets_cache(cloud_id, project_key)
-            if cached_tickets:
+            if cached_tickets is not None:
                 logger.info(f"Returning cached Jira tickets for {project_key} due to Jira failure.")
                 return cached_tickets
             else:
@@ -229,7 +260,7 @@ class JiraService:
             # Catch other HTTPExceptions from JiraService (e.g., config error from pydantic-client)
             logger.error(f"Jira API _get_recent_tickets_from_jira failed for project {project_key}: {e.detail}. Attempting to retrieve from cache.")
             cached_tickets = await self.user_store.get_jira_tickets_cache(cloud_id, project_key)
-            if cached_tickets:
+            if cached_tickets is not None:
                 logger.info(f"Returning cached Jira tickets for {project_key} due to Jira failure.")
                 return cached_tickets
             else:
@@ -239,7 +270,7 @@ class JiraService:
             # Catch any other unexpected exceptions
             logger.error(f"An unexpected error occurred while fetching Jira tickets for project {project_key}: {e}. Attempting to retrieve from cache.")
             cached_tickets = await self.user_store.get_jira_tickets_cache(cloud_id, project_key)
-            if cached_tickets:
+            if cached_tickets is not None:
                 logger.info(f"Returning cached Jira tickets for {project_key} due to unexpected error.")
                 return cached_tickets
             else:

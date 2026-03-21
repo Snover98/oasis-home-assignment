@@ -2,7 +2,7 @@ import pytest
 from httpx import AsyncClient, ASGITransport
 from unittest.mock import AsyncMock, patch, ANY
 from app.main import app
-from app.models.models import JiraConfig, Project, Ticket, TicketReference, UserInDB, CreatedIssueResponse, JiraSearchResultsResponse
+from app.models.models import JiraCacheContext, JiraConfig, Project, Ticket, TicketReference, UserInDB, CreatedIssueResponse, JiraSearchResultsResponse
 from app.core.user_store import RedisUserStore
 from datetime import datetime, timezone
 import httpx
@@ -34,7 +34,8 @@ async def test_get_jira_projects_live_success_caches_result(create_user, mock_ji
         "testuser",
         "test@example.com",
         "password",
-        jira_config=JiraConfig(access_token="fake_token", cloud_id="fake_cloud_id")
+        jira_config=JiraConfig(access_token="fake_token"),
+        jira_cache_context=JiraCacheContext(cloud_id="fake_cloud_id"),
     )
 
     mock_api_client.get_projects.return_value = [
@@ -68,7 +69,8 @@ async def test_get_jira_projects_jira_failure_cache_fallback(create_user, mock_j
         "testuser",
         "test@example.com",
         "password",
-        jira_config=JiraConfig(access_token="fake_token", cloud_id="fake_cloud_id")
+        jira_config=JiraConfig(access_token="fake_token"),
+        jira_cache_context=JiraCacheContext(cloud_id="fake_cloud_id"),
     )
 
     mock_api_client.get_projects.side_effect = httpx.NetworkError("Jira is down")
@@ -95,7 +97,8 @@ async def test_get_jira_projects_jira_failure_no_cache(create_user, mock_user_st
         "testuser",
         "test@example.com",
         "password",
-        jira_config=JiraConfig(access_token="fake_token", cloud_id="fake_cloud_id")
+        jira_config=JiraConfig(access_token="fake_token"),
+        jira_cache_context=JiraCacheContext(cloud_id="fake_cloud_id"),
     )
 
     mock_user_store.get_jira_projects_cache.return_value = None
@@ -122,7 +125,8 @@ async def test_get_jira_projects_cache_per_cloud_id(create_user, mock_jira_servi
         "testuser",
         "test@example.com",
         "password",
-        jira_config=JiraConfig(access_token="fake_token", cloud_id="fake_cloud_id")
+        jira_config=JiraConfig(access_token="fake_token"),
+        jira_cache_context=JiraCacheContext(cloud_id="fake_cloud_id"),
     )
 
     mock_api_client.get_projects.return_value = [Project(id="10000", key="PROJA", name="Project A")]
@@ -147,7 +151,8 @@ async def test_cached_projects_enable_cached_ticket_failover(create_user, mock_j
         "testuser",
         "test@example.com",
         "password",
-        jira_config=JiraConfig(access_token="fake_token", cloud_id="fake_cloud_id")
+        jira_config=JiraConfig(access_token="fake_token"),
+        jira_cache_context=JiraCacheContext(cloud_id="fake_cloud_id"),
     )
 
     live_projects = [Project(id="10000", key="PROJA", name="Project A")]
@@ -211,6 +216,109 @@ async def test_cached_projects_enable_cached_ticket_failover(create_user, mock_j
     mock_user_store.get_jira_tickets_cache.assert_called_once_with("fake_cloud_id", "PROJA")
 
 @pytest.mark.asyncio
+async def test_cached_projects_and_tickets_work_without_live_jira_config(create_user, fake_user_store):
+    await create_user(
+        "testuser",
+        "test@example.com",
+        "password",
+        jira_config=JiraConfig(access_token="fake_token"),
+        jira_cache_context=JiraCacheContext(
+            cloud_id="fake_cloud_id",
+            site_url="https://mock.jira",
+        ),
+    )
+    await fake_user_store.save_jira_projects_cache(
+        "fake_cloud_id",
+        [Project(id="10000", key="CACHED", name="Cached Project")],
+        ttl=settings.JIRA_CACHE_TTL,
+    )
+    await fake_user_store.save_jira_tickets_cache(
+        "fake_cloud_id",
+        "CACHED",
+        [
+            Ticket(
+                id="1",
+                key="CACHED-1",
+                self="https://mock.jira/browse/CACHED-1",
+                summary="Cached Ticket",
+                status="Open",
+                priority="High",
+                issuetype="Task",
+                created=datetime.now(timezone.utc),
+            )
+        ],
+        ttl=settings.JIRA_CACHE_TTL,
+    )
+    await fake_user_store.set_jira_config("testuser", None)
+
+    transport = ASGITransport(app=app)
+    async with AsyncClient(transport=transport, base_url="http://test") as ac:
+        await ac.post("/token", data={"username": "testuser", "password": "password"})
+        projects_response = await ac.get("/api/v1/jira/projects")
+        tickets_response = await ac.get("/api/v1/jira/tickets/recent?project_key=CACHED")
+
+    assert projects_response.status_code == 200
+    assert projects_response.json() == [{"id": "10000", "key": "CACHED", "name": "Cached Project"}]
+    assert tickets_response.status_code == 200
+    assert tickets_response.json()[0]["key"] == "CACHED-1"
+
+@pytest.mark.asyncio
+async def test_switching_to_project_with_empty_cached_tickets_returns_empty_list(create_user, fake_user_store):
+    await create_user(
+        "testuser",
+        "test@example.com",
+        "password",
+        jira_config=JiraConfig(access_token="fake_token"),
+        jira_cache_context=JiraCacheContext(
+            cloud_id="fake_cloud_id",
+            site_url="https://mock.jira",
+        ),
+    )
+    await fake_user_store.save_jira_projects_cache(
+        "fake_cloud_id",
+        [
+            Project(id="10000", key="EMPTY", name="Empty Project"),
+            Project(id="10001", key="FILLED", name="Filled Project"),
+        ],
+        ttl=settings.JIRA_CACHE_TTL,
+    )
+    await fake_user_store.save_jira_tickets_cache(
+        "fake_cloud_id",
+        "EMPTY",
+        [],
+        ttl=settings.JIRA_CACHE_TTL,
+    )
+    await fake_user_store.save_jira_tickets_cache(
+        "fake_cloud_id",
+        "FILLED",
+        [
+            Ticket(
+                id="1",
+                key="FILLED-1",
+                self="https://mock.jira/browse/FILLED-1",
+                summary="Filled Ticket",
+                status="Open",
+                priority="High",
+                issuetype="Task",
+                created=datetime.now(timezone.utc),
+            )
+        ],
+        ttl=settings.JIRA_CACHE_TTL,
+    )
+    await fake_user_store.set_jira_config("testuser", None)
+
+    transport = ASGITransport(app=app)
+    async with AsyncClient(transport=transport, base_url="http://test") as ac:
+        await ac.post("/token", data={"username": "testuser", "password": "password"})
+        empty_response = await ac.get("/api/v1/jira/tickets/recent?project_key=EMPTY")
+        filled_response = await ac.get("/api/v1/jira/tickets/recent?project_key=FILLED")
+
+    assert empty_response.status_code == 200
+    assert empty_response.json() == []
+    assert filled_response.status_code == 200
+    assert filled_response.json()[0]["key"] == "FILLED-1"
+
+@pytest.mark.asyncio
 async def test_get_recent_jira_tickets_cache_hit(create_user, mock_jira_service_deps):
     mock_user_store, mock_api_client = mock_jira_service_deps
     
@@ -219,7 +327,8 @@ async def test_get_recent_jira_tickets_cache_hit(create_user, mock_jira_service_
         "testuser",
         "test@example.com",
         "password",
-        jira_config=JiraConfig(access_token="fake_token", cloud_id="fake_cloud_id")
+        jira_config=JiraConfig(access_token="fake_token"),
+        jira_cache_context=JiraCacheContext(cloud_id="fake_cloud_id"),
     )
 
     # Mock cached tickets
@@ -257,7 +366,8 @@ async def test_get_recent_jira_tickets_cache_miss_jira_success(create_user, mock
         "testuser",
         "test@example.com",
         "password",
-        jira_config=JiraConfig(access_token="fake_token", cloud_id="fake_cloud_id")
+        jira_config=JiraConfig(access_token="fake_token"),
+        jira_cache_context=JiraCacheContext(cloud_id="fake_cloud_id"),
     )
 
     # Mock no cached tickets
@@ -293,7 +403,8 @@ async def test_get_recent_jira_tickets_jira_failure_cache_fallback(create_user, 
         "testuser",
         "test@example.com",
         "password",
-        jira_config=JiraConfig(access_token="fake_token", cloud_id="fake_cloud_id")
+        jira_config=JiraConfig(access_token="fake_token"),
+        jira_cache_context=JiraCacheContext(cloud_id="fake_cloud_id"),
     )
 
     # Mock Jira API failure (e.g., network error)
@@ -326,7 +437,8 @@ async def test_get_recent_jira_tickets_jira_failure_no_cache_fallback(create_use
         "testuser",
         "test@example.com",
         "password",
-        jira_config=JiraConfig(access_token="fake_token", cloud_id="fake_cloud_id")
+        jira_config=JiraConfig(access_token="fake_token"),
+        jira_cache_context=JiraCacheContext(cloud_id="fake_cloud_id"),
     )
 
     # Mock no cached tickets
@@ -357,7 +469,8 @@ async def test_create_jira_ticket_invalidates_cache(create_user, mock_jira_servi
         "testuser",
         "test@example.com",
         "password",
-        jira_config=JiraConfig(access_token="fake_token", cloud_id="fake_cloud_id")
+        jira_config=JiraConfig(access_token="fake_token"),
+        jira_cache_context=JiraCacheContext(cloud_id="fake_cloud_id"),
     )
 
     # Mock Jira API ticket creation success
@@ -388,7 +501,8 @@ async def test_get_recent_jira_tickets_cache_per_project_key(create_user, mock_j
         "testuser",
         "test@example.com",
         "password",
-        jira_config=JiraConfig(access_token="fake_token", cloud_id="fake_cloud_id")
+        jira_config=JiraConfig(access_token="fake_token"),
+        jira_cache_context=JiraCacheContext(cloud_id="fake_cloud_id"),
     )
 
     # --- First call for project "PROJA" ---
@@ -455,7 +569,8 @@ async def test_jira_cache_ttl(create_user, mock_jira_service_deps, monkeypatch):
         "testuser",
         "test@example.com",
         "password",
-        jira_config=JiraConfig(access_token="fake_token", cloud_id="fake_cloud_id")
+        jira_config=JiraConfig(access_token="fake_token"),
+        jira_cache_context=JiraCacheContext(cloud_id="fake_cloud_id"),
     )
 
     async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as ac:
@@ -501,7 +616,8 @@ async def test_create_jira_ticket_failure_does_not_invalidate_cache(create_user,
         "testuser",
         "test@example.com",
         "password",
-        jira_config=JiraConfig(access_token="fake_token", cloud_id="fake_cloud_id")
+        jira_config=JiraConfig(access_token="fake_token"),
+        jira_cache_context=JiraCacheContext(cloud_id="fake_cloud_id"),
     )
 
     # Mock Jira API ticket creation failure

@@ -29,7 +29,10 @@ class JiraConfig(BaseModel):
     """Configuration for a user's Jira connection."""
     access_token: str
     refresh_token: str | None = None
-    cloud_id: str | None = None
+
+class JiraCacheContext(BaseModel):
+    """Minimal Jira metadata required to address cached resources after disconnect."""
+    cloud_id: str
     site_url: str | None = None
 
 class Project(BaseModel):

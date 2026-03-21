@@ -9,8 +9,6 @@
 export interface JiraConfig {
   access_token: string;
   refresh_token?: string;
-  cloud_id?: string;
-  site_url?: string;
 }
 
 export interface APIKey {
@@ -55,4 +53,3 @@ export interface Ticket {
   issuetype: string;
   created: string;
 }
-

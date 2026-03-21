@@ -28,6 +28,7 @@ from app.core.auth import (
     register_user,
     require_csrf_for_cookie_auth,
     revoke_user_api_key,
+    update_user_jira_cache_context,
     update_user_jira_config,
 )
 from app.core.config import settings
@@ -41,6 +42,7 @@ from app.models.models import (
     AtlassianTokenResponse,
     AuthCallbackResponse,
     AuthUrlResponse,
+    JiraCacheContext,
     JiraConfig,
     StoredAPIKey,
     User,
@@ -245,9 +247,11 @@ async def jira_auth_callback(
         JiraConfig(
             access_token=token_data.access_token,
             refresh_token=token_data.refresh_token,
-            cloud_id=jira_resource.id,
-            site_url=jira_resource.url,
         ),
+    )
+    await update_user_jira_cache_context(
+        current_user.username,
+        JiraCacheContext(cloud_id=jira_resource.id, site_url=jira_resource.url),
     )
     return AuthCallbackResponse(status="success", site_name=jira_resource.name)
 

@@ -24,7 +24,7 @@ def mock_automated_job_deps():
             username="testuser",
             email="test@example.com",
             password_hash="hashed",
-            jira_config=JiraConfig(access_token="fake", cloud_id="fake"),
+            jira_config=JiraConfig(access_token="fake"),
             api_keys=[],
         )
         

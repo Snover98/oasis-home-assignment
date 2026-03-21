@@ -1,7 +1,8 @@
 import pytest
 from unittest.mock import AsyncMock, patch
 from app.api.jobs.router import perform_blog_digest
-from app.models.models import User, JiraConfig, TicketReference, BlogPost
+from app.core.auth import get_user_store
+from app.models.models import BlogPost, JiraCacheContext, JiraConfig, TicketReference, User
 
 @pytest.fixture
 def mock_blog_services():
@@ -31,11 +32,12 @@ def mock_blog_services():
 @pytest.mark.asyncio
 async def test_perform_blog_digest_success(mock_blog_services):
     scraper, ai, jira = mock_blog_services
+    await get_user_store().set_jira_cache_context("testuser", JiraCacheContext(cloud_id="fake"))
     
     current_user = User(
         username="testuser",
         email="test@example.com",
-        jira_config=JiraConfig(access_token="fake", cloud_id="fake")
+        jira_config=JiraConfig(access_token="fake")
     )
     
     result = await perform_blog_digest(current_user, "NHI")
@@ -53,13 +55,14 @@ async def test_perform_blog_digest_success(mock_blog_services):
 async def test_perform_blog_digest_no_post(mock_blog_services):
     scraper, ai, jira = mock_blog_services
     scraper.get_latest_post = AsyncMock(return_value=None)
+    await get_user_store().set_jira_cache_context("testuser", JiraCacheContext(cloud_id="fake"))
     
     from fastapi import HTTPException
     
     current_user = User(
         username="testuser",
         email="test@example.com",
-        jira_config=JiraConfig(access_token="fake", cloud_id="fake")
+        jira_config=JiraConfig(access_token="fake")
     )
     
     with pytest.raises(HTTPException) as excinfo:

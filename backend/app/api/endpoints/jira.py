@@ -7,10 +7,44 @@ from fastapi import APIRouter, Depends, HTTPException
 import httpx # Import httpx
 
 from app.models.models import User, Project, Ticket, TicketCreate, FindingCreate, TicketReference, FindingResponse
-from app.core.auth import get_current_user, get_any_user, require_csrf_for_cookie_auth
+from app.core.auth import get_current_user, get_any_user, get_user_store, require_csrf_for_cookie_auth
 from app.services.jira import JiraService
 
 router = APIRouter(tags=["jira"])
+
+
+async def _get_jira_service_for_reads(current_user: User) -> JiraService:
+    cache_context = await get_user_store().get_jira_cache_context(current_user.username)
+    if current_user.jira_config:
+        return JiraService(
+            current_user.jira_config,
+            cache_cloud_id=cache_context.cloud_id if cache_context else None,
+            cache_site_url=cache_context.site_url if cache_context else None,
+        )
+
+    if cache_context is None:
+        raise HTTPException(status_code=400, detail="Jira not connected")
+
+    return JiraService(
+        None,
+        cache_cloud_id=cache_context.cloud_id,
+        cache_site_url=cache_context.site_url,
+    )
+
+
+async def _get_jira_service_for_writes(current_user: User) -> JiraService:
+    if not current_user.jira_config:
+        raise HTTPException(status_code=400, detail="Jira not connected")
+
+    cache_context = await get_user_store().get_jira_cache_context(current_user.username)
+    if cache_context is None:
+        raise HTTPException(status_code=400, detail="Jira not connected")
+
+    return JiraService(
+        current_user.jira_config,
+        cache_cloud_id=cache_context.cloud_id,
+        cache_site_url=cache_context.site_url,
+    )
 
 @router.get("/api/v1/jira/projects", response_model=list[Project])
 async def get_jira_projects(current_user: User = Depends(get_current_user)) -> list[Project]:
@@ -26,10 +60,7 @@ async def get_jira_projects(current_user: User = Depends(get_current_user)) -> l
     Raises:
         HTTPException: If Jira is not connected for the user.
     """
-    if not current_user.jira_config:
-        raise HTTPException(status_code=400, detail="Jira not connected")
-    
-    jira_service = JiraService(current_user.jira_config)
+    jira_service = await _get_jira_service_for_reads(current_user)
     try:
         return await jira_service.get_projects()
     except HTTPException as e:
@@ -56,10 +87,7 @@ async def create_jira_ticket(
     Raises:
         HTTPException: If Jira is not connected for the user.
     """
-    if not current_user.jira_config:
-        raise HTTPException(status_code=400, detail="Jira not connected")
-    
-    jira_service = JiraService(current_user.jira_config)
+    jira_service = await _get_jira_service_for_writes(current_user)
     try:
         return await jira_service.create_ticket(
             project_key=ticket_data.project_key,
@@ -91,10 +119,7 @@ async def get_recent_jira_tickets(
     Raises:
         HTTPException: If Jira is not connected for the user.
     """
-    if not current_user.jira_config:
-        raise HTTPException(status_code=400, detail="Jira not connected")
-    
-    jira_service = JiraService(current_user.jira_config)
+    jira_service = await _get_jira_service_for_reads(current_user)
     try:
         return await jira_service.get_recent_tickets(project_key=project_key)
     except HTTPException as e:
@@ -120,10 +145,7 @@ async def report_finding(
     Raises:
         HTTPException: If Jira is not connected or the ticket creation fails.
     """
-    if not current_user.jira_config:
-        raise HTTPException(status_code=400, detail="Jira not connected")
-    
-    jira_service = JiraService(current_user.jira_config)
+    jira_service = await _get_jira_service_for_writes(current_user)
     
     try:
         result = await jira_service.create_ticket(

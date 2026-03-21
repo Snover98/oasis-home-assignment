@@ -2,7 +2,7 @@ import pytest
 from httpx import AsyncClient, ASGITransport
 from unittest.mock import AsyncMock, patch
 from app.main import app
-from app.models.models import JiraConfig, TicketReference
+from app.models.models import JiraCacheContext, JiraConfig, TicketReference
 from app.core.auth import get_user_store
 
 @pytest.fixture
@@ -25,12 +25,13 @@ async def test_report_finding_with_api_key(mock_jira_service, create_user):
         api_keys=[("Default Key", "oasis_test_key_1")],
     )
     user_store = get_user_store()
-    jira_config = JiraConfig(
-        access_token="fake_token",
-        cloud_id="fake_cloud_id"
-    )
+    jira_config = JiraConfig(access_token="fake_token")
     # Use set_jira_config to update the Jira config
     await user_store.set_jira_config(user.username, jira_config)
+    await user_store.set_jira_cache_context(
+        user.username,
+        JiraCacheContext(cloud_id="fake_cloud_id"),
+    )
 
     transport = ASGITransport(app=app)
     async with AsyncClient(transport=transport, base_url="http://test") as ac:

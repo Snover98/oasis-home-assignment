@@ -7,7 +7,7 @@ import asyncio
 from fastapi import APIRouter, Depends, HTTPException
 
 from app.models.models import User, BlogDigestRequest, BlogDigestResponse, TicketReference, BlogPost
-from app.core.auth import get_current_user, get_user_record, require_csrf_for_cookie_auth
+from app.core.auth import get_current_user, get_user_record, get_user_store, require_csrf_for_cookie_auth
 from app.services.ai_summary import AISummaryService
 from app.services.blog_scraper import BlogScraper
 from app.services.jira import JiraService
@@ -44,6 +44,9 @@ async def perform_blog_digest(current_user: User, project_key: str, blog_post: B
     """
     if not current_user.jira_config:
         raise HTTPException(status_code=400, detail="Jira configuration is missing for this user")
+    cache_context = await get_user_store().get_jira_cache_context(current_user.username)
+    if cache_context is None:
+        raise HTTPException(status_code=400, detail="Jira configuration is missing for this user")
 
     latest_post = blog_post
     if not latest_post:
@@ -55,7 +58,11 @@ async def perform_blog_digest(current_user: User, project_key: str, blog_post: B
     ai_service = AISummaryService()
     summary = await ai_service.summarize_blog_post(latest_post.title, latest_post.content)
 
-    jira_service = JiraService(current_user.jira_config)
+    jira_service = JiraService(
+        current_user.jira_config,
+        cache_cloud_id=cache_context.cloud_id,
+        cache_site_url=cache_context.site_url,
+    )
     return await jira_service.create_ticket(
         project_key=project_key,
         summary=f"Blog Digest: {latest_post.title}",

@@ -210,4 +210,115 @@ test.describe('End-to-End Jira Integration Flow', () => {
     await expect(page.locator('text=CACHEB-1')).toBeVisible();
     await expect(page.locator('h4')).toContainText('Cached Ticket B');
   });
+
+  test('should load cached Jira data after the Jira config is removed', async ({ page }) => {
+    const user = createUniqueUser();
+    await mockCurrentUser(page, user, {
+      jiraConfig: null,
+    });
+
+    await page.route('**/api/v1/jira/projects', async (route) => {
+      await route.fulfill({
+        status: 200,
+        contentType: 'application/json',
+        body: JSON.stringify([
+          { id: '10000', key: 'CACHED', name: 'Cached Project' },
+        ]),
+      });
+    });
+
+    await page.route('**/api/v1/jira/tickets/recent*', async (route) => {
+      await route.fulfill({
+        status: 200,
+        contentType: 'application/json',
+        body: JSON.stringify([
+          {
+            id: '40101',
+            key: 'CACHED-1',
+            summary: 'Cached Ticket After Disconnect',
+            status: 'To Do',
+            priority: 'Medium',
+            issuetype: 'Task',
+            created: new Date().toISOString(),
+            self: 'https://mock.jira/CACHED-1'
+          }
+        ]),
+      });
+    });
+
+    await page.goto('/dashboard');
+
+    await expect(page.getByRole('heading', { name: 'Report NHI Finding' })).toBeVisible();
+    await expect(page.locator('select')).toContainText('Cached Project (CACHED)');
+    await expect(page.locator('text=CACHED-1')).toBeVisible();
+    await expect(page.locator('text=Jira is disconnected. Showing cached projects and tickets in read-only mode.')).toBeVisible();
+    await expect(page.getByRole('button', { name: 'Create Jira Ticket' })).toBeDisabled();
+    await expect(page.getByRole('button', { name: 'Trigger Blog Digest' })).toBeDisabled();
+  });
+
+  test('should keep the latest project tickets visible when switching projects quickly during failover', async ({ page }) => {
+    const user = createUniqueUser();
+    await mockCurrentUser(page, user, {
+      jiraConfig: null,
+    });
+
+    await page.route('**/api/v1/jira/projects', async (route) => {
+      await route.fulfill({
+        status: 200,
+        contentType: 'application/json',
+        body: JSON.stringify([
+          { id: '10000', key: 'CACHEA', name: 'Cached Project A' },
+          { id: '10001', key: 'CACHEB', name: 'Cached Project B' },
+        ]),
+      });
+    });
+
+    await page.route('**/api/v1/jira/tickets/recent*', async (route) => {
+      const projectKey = new URL(route.request().url()).searchParams.get('project_key');
+
+      if (projectKey === 'CACHEA') {
+        await new Promise((resolve) => setTimeout(resolve, 250));
+      }
+
+      const ticketsByProject = {
+        CACHEA: [
+          {
+            id: '50101',
+            key: 'CACHEA-1',
+            summary: 'Cached Ticket A',
+            status: 'To Do',
+            priority: 'Low',
+            issuetype: 'Task',
+            created: new Date().toISOString(),
+            self: 'https://mock.jira/CACHEA-1'
+          }
+        ],
+        CACHEB: [
+          {
+            id: '50102',
+            key: 'CACHEB-1',
+            summary: 'Cached Ticket B',
+            status: 'Done',
+            priority: 'High',
+            issuetype: 'Bug',
+            created: new Date().toISOString(),
+            self: 'https://mock.jira/CACHEB-1'
+          }
+        ],
+      };
+
+      await route.fulfill({
+        status: 200,
+        contentType: 'application/json',
+        body: JSON.stringify(ticketsByProject[projectKey as keyof typeof ticketsByProject] ?? []),
+      });
+    });
+
+    await page.goto('/dashboard');
+    await page.selectOption('select', 'CACHEB');
+
+    await expect(page.locator('text=CACHEB-1')).toBeVisible();
+    await expect(page.locator('text=CACHEA-1')).not.toBeVisible();
+    await expect(page.locator('h4')).toContainText('Cached Ticket B');
+  });
 });
