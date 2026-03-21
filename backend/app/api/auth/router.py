@@ -17,15 +17,18 @@ from pydantic_client.async_client import HttpxWebClient
 from pyrate_limiter import Duration, Limiter, Rate
 
 from app.core.auth import (
-    USERS_DB,
     _to_public_api_key,
+    append_user_api_key,
     authenticate_user,
     clear_auth_cookies,
     get_current_user,
+    get_user_record,
     get_refresh_token_subject,
     issue_auth_cookies,
     register_user,
     require_csrf_for_cookie_auth,
+    revoke_user_api_key,
+    update_user_jira_config,
 )
 from app.core.config import settings
 from app.core.security import get_secret_hash
@@ -102,7 +105,7 @@ async def register(user_data: UserCreate, response: Response) -> Response:
     Register endpoint to create a new user and issue cookie-based browser auth.
     """
     try:
-        register_user(user_data)
+        await register_user(user_data)
     except ValueError as e:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(e))
 
@@ -124,7 +127,7 @@ async def login_for_access_token(
     """
     Login endpoint to issue cookie-based browser auth using username and password.
     """
-    user = authenticate_user(form_data.username, form_data.password)
+    user = await authenticate_user(form_data.username, form_data.password)
     if user is None:
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
@@ -147,7 +150,8 @@ async def refresh_auth_session(request: Request, response: Response) -> Response
         raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Refresh token is missing")
 
     username = get_refresh_token_subject(refresh_token)
-    if username not in USERS_DB:
+    user = await get_user_record(username)
+    if user is None:
         raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Invalid refresh token")
 
     issue_auth_cookies(response, username)
@@ -177,7 +181,10 @@ async def read_users_me(current_user: User = Depends(get_current_user)) -> User:
 
 
 @router.get("/api/v1/jira/auth/url", response_model=AuthUrlResponse, tags=["jira-auth"])
-async def get_jira_auth_url(current_user: User = Depends(get_current_user)) -> AuthUrlResponse:
+async def get_jira_auth_url(
+    request: Request,
+    current_user: User = Depends(get_current_user),
+) -> AuthUrlResponse:
     """
     Generates the Atlassian OAuth 2.0 authorization URL for the user to initiate the connection.
     """
@@ -196,6 +203,7 @@ async def get_jira_auth_url(current_user: User = Depends(get_current_user)) -> A
 
 @router.post("/api/v1/jira/auth/callback", response_model=AuthCallbackResponse, tags=["jira-auth"])
 async def jira_auth_callback(
+    request: Request,
     code: str,
     current_user: User = Depends(get_current_user),
     _: None = Depends(require_csrf_for_cookie_auth),
@@ -204,7 +212,7 @@ async def jira_auth_callback(
     OAuth 2.0 callback endpoint. Exchanges the authorization code for tokens,
     identifies the accessible Jira site, and stores the configuration for the user.
     """
-    if current_user.username not in USERS_DB:
+    if await get_user_record(current_user.username) is None:
         raise HTTPException(status_code=404, detail=f"User {current_user.username} not found")
 
     auth_client = AtlassianAuthClient(base_url="https://auth.atlassian.com")
@@ -232,11 +240,14 @@ async def jira_auth_callback(
 
     jira_resource = next((r for r in resources if any("jira" in s for s in r.scopes)), resources[0])
 
-    USERS_DB[current_user.username].jira_config = JiraConfig(
-        access_token=token_data.access_token,
-        refresh_token=token_data.refresh_token,
-        cloud_id=jira_resource.id,
-        site_url=jira_resource.url,
+    await update_user_jira_config(
+        current_user.username,
+        JiraConfig(
+            access_token=token_data.access_token,
+            refresh_token=token_data.refresh_token,
+            cloud_id=jira_resource.id,
+            site_url=jira_resource.url,
+        ),
     )
     return AuthCallbackResponse(status="success", site_name=jira_resource.name)
 
@@ -267,8 +278,9 @@ async def create_api_key(
         created_at=datetime.now(timezone.utc),
     )
 
-    user_in_db = USERS_DB[current_user.username]
-    user_in_db.api_keys.append(stored_key)
+    user_in_db = await append_user_api_key(current_user.username, stored_key)
+    if user_in_db is None:
+        raise HTTPException(status_code=404, detail=f"User {current_user.username} not found")
 
     public_key = _to_public_api_key(stored_key)
     return APIKeyWithSecret(
@@ -288,10 +300,6 @@ async def revoke_api_key(
     """
     Revokes (deletes) a specific API key for the user.
     """
-    user_in_db = USERS_DB[current_user.username]
-    original_length = len(user_in_db.api_keys)
-
-    user_in_db.api_keys = [k for k in user_in_db.api_keys if k.id != key_id]
-
-    if len(user_in_db.api_keys) == original_length:
+    removed = await revoke_user_api_key(current_user.username, key_id)
+    if not removed:
         raise HTTPException(status_code=404, detail="API Key not found")

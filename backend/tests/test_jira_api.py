@@ -3,6 +3,7 @@ from httpx import AsyncClient, ASGITransport
 from unittest.mock import AsyncMock, patch
 from app.main import app
 from app.models.models import JiraConfig, TicketReference
+from app.core.auth import get_user_store
 
 @pytest.fixture
 def mock_jira_service():
@@ -16,13 +17,19 @@ def mock_jira_service():
         yield service_instance
 
 @pytest.mark.asyncio
-async def test_report_finding_with_api_key(mock_jira_service):
-    # Set up user with jira_config in USERS_DB for the test
-    from app.core.auth import USERS_DB
-    USERS_DB["testuser"].jira_config = JiraConfig(
+async def test_report_finding_with_api_key(mock_jira_service, create_user):
+    user = await create_user(
+        "testuser",
+        "test@example.com",
+        "password",
+        api_keys=[("Default Key", "oasis_test_key_1")],
+    )
+    user_store = get_user_store()
+    user.jira_config = JiraConfig(
         access_token="fake_token",
         cloud_id="fake_cloud_id"
     )
+    await user_store.save_user(user)
 
     transport = ASGITransport(app=app)
     async with AsyncClient(transport=transport, base_url="http://test") as ac:
@@ -78,10 +85,18 @@ async def test_report_finding_missing_api_key():
     assert "No valid authentication provided" in response.json()["detail"]
 
 @pytest.mark.asyncio
-async def test_report_finding_no_jira_connected():
-    # Ensure testuser2 has no jira_config
-    from app.core.auth import USERS_DB
-    USERS_DB["testuser2"].jira_config = None
+async def test_report_finding_no_jira_connected(create_user):
+    await create_user(
+        "testuser2",
+        "test2@example.com",
+        "notpass",
+        api_keys=[("Default Key", "oasis_test_key_2")],
+    )
+    user_store = get_user_store()
+    user = await user_store.get_user("testuser2")
+    assert user is not None
+    user.jira_config = None
+    await user_store.save_user(user)
 
     transport = ASGITransport(app=app)
     async with AsyncClient(transport=transport, base_url="http://test") as ac:

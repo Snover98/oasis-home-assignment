@@ -7,7 +7,7 @@ import asyncio
 from fastapi import APIRouter, Depends, HTTPException
 
 from app.models.models import User, BlogDigestRequest, BlogDigestResponse, TicketReference, BlogPost
-from app.core.auth import get_current_user, USERS_DB, require_csrf_for_cookie_auth
+from app.core.auth import get_current_user, get_user_record, require_csrf_for_cookie_auth
 from app.services.ai_summary import AISummaryService
 from app.services.blog_scraper import BlogScraper
 from app.services.jira import JiraService
@@ -75,8 +75,7 @@ async def run_automated_blog_digest() -> None:
     
     while True:
         try:
-            # 1. Fetch user from USERS_DB
-            user_in_db = USERS_DB.get(settings.AUTO_BLOG_DIGEST_USER)
+            user_in_db = await get_user_record(settings.AUTO_BLOG_DIGEST_USER)
             if not user_in_db or not user_in_db.jira_config:
                 await asyncio.sleep(settings.AUTO_BLOG_DIGEST_INTERVAL_SECONDS)
                 continue
@@ -85,7 +84,7 @@ async def run_automated_blog_digest() -> None:
                 username=user_in_db.username,
                 email=user_in_db.email,
                 jira_config=user_in_db.jira_config,
-                api_key=user_in_db.api_key
+                api_keys=[],
             )
 
             # 2. Check for latest post

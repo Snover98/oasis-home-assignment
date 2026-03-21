@@ -6,53 +6,16 @@ for retrieving the current authenticated user.
 
 import jwt
 import secrets
-import uuid
 from datetime import datetime, timedelta, timezone
 from fastapi import Depends, HTTPException, Request, Response, status
 from fastapi.security import APIKeyHeader
 from app.models.models import User, UserInDB, UserCreate, APIKey, StoredAPIKey
-from app.core.security import verify_password, get_password_hash, get_secret_hash, verify_secret
+from app.core.security import verify_password, get_password_hash, get_secret_hash
 from app.core.config import settings
 from typing import Any, Optional
+from app.core.user_store import RedisUserStore
 
-"""
-In-memory user store for demonstration.
-
-For an actual implementation, this should be a secret store or a database which is accessed.
-
-Currently I also don't lock the user when modifying it due to this being a single instance backend,
-but for scale it will be needed.
-"""
-USERS_DB: dict[str, UserInDB] = {
-    "testuser": UserInDB(
-        username="testuser",
-        email="test@example.com",
-        password_hash="$2b$12$MAaylIRAuacc/pfH.cuEoO7NV57ru17Yjs1xo2CPEiOujauO238l2", # 'password'
-        jira_config=None,
-        api_keys=[
-            StoredAPIKey(
-                id=str(uuid.uuid4()),
-                name="Default Key",
-                key_hash=get_secret_hash("oasis_test_key_1"),
-                created_at=datetime.now(timezone.utc)
-            )
-        ]
-    ),
-    "testuser2": UserInDB(
-        username="testuser2",
-        email="test2@example.com",
-        password_hash="$2b$12$HcznasTTRG6YHJS7wN8WvO7G60tuPKEPcp8jCq5PL8UhEgzxmbgHC", # 'notpass'
-        jira_config=None,
-        api_keys=[
-            StoredAPIKey(
-                id=str(uuid.uuid4()),
-                name="Default Key",
-                key_hash=get_secret_hash("oasis_test_key_2"),
-                created_at=datetime.now(timezone.utc)
-            )
-        ]
-    )
-}
+_user_store: RedisUserStore | None = None
 
 # API Key scheme for programmatic access
 api_key_header = APIKeyHeader(name="X-API-Key", auto_error=False)
@@ -72,7 +35,26 @@ def _to_public_user(user: UserInDB) -> User:
         api_keys=[_to_public_api_key(api_key) for api_key in user.api_keys],
     )
 
-def authenticate_user(username: str, password: str) -> User | None:
+def configure_user_store(user_store: RedisUserStore) -> None:
+    global _user_store
+    _user_store = user_store
+
+
+def get_user_store() -> RedisUserStore:
+    global _user_store
+    if _user_store is None:
+        _user_store = RedisUserStore.from_url(settings.REDIS_URL)
+    return _user_store
+
+
+async def close_user_store() -> None:
+    global _user_store
+    if _user_store is not None:
+        await _user_store.close()
+        _user_store = None
+
+
+async def authenticate_user(username: str, password: str) -> User | None:
     """
     Authenticates a user based on username and password.
 
@@ -83,12 +65,13 @@ def authenticate_user(username: str, password: str) -> User | None:
     Returns:
         User | None: Returns a User model if authentication is successful, None otherwise.
     """
-    if (user := USERS_DB.get(username)) is None or not verify_password(password, user.password_hash):
+    user = await get_user_store().get_user(username)
+    if user is None or not verify_password(password, user.password_hash):
         return None
     
     return _to_public_user(user)
 
-def register_user(user_data: UserCreate) -> User:
+async def register_user(user_data: UserCreate) -> User:
     """
     Registers a new user in the system.
 
@@ -101,25 +84,15 @@ def register_user(user_data: UserCreate) -> User:
     Raises:
         ValueError: If the username already exists.
     """
-    if user_data.username in USERS_DB:
+    if await get_user_store().user_exists(user_data.username):
         raise ValueError(f"Username {user_data.username} already exists")
 
-    new_user = UserInDB(
+    new_user = await get_user_store().create_user(
         username=user_data.username,
         email=user_data.email,
         password_hash=get_password_hash(user_data.password),
-        jira_config=None,
-        api_keys=[
-            StoredAPIKey(
-                id=str(uuid.uuid4()),
-                name="Default Key",
-                key_hash=get_secret_hash(f"oasis_key_{secrets.token_urlsafe(16)}"),
-                created_at=datetime.now(timezone.utc)
-            )
-        ]
     )
-    USERS_DB[user_data.username] = new_user
-    
+
     return _to_public_user(new_user)
 
 def create_access_token(data: dict[str, Any], expires_delta: timedelta) -> str:
@@ -237,17 +210,33 @@ def issue_auth_cookies(response: Response, username: str) -> None:
         csrf_token=create_csrf_token(),
     )
 
-def _user_from_access_token(token: str) -> User:
+async def _user_from_access_token(token: str) -> User:
     payload = _decode_token(token, expected_type="access")
     username: str | None = payload.get("sub")
     if username is None:
         raise __credentials_exception(reason="Invalid username in payload")
 
-    user = USERS_DB.get(username)
+    user = await get_user_store().get_user(username)
     if user is None:
         raise __credentials_exception(reason=f"User {username} not found")
 
     return _to_public_user(user)
+
+
+async def get_user_record(username: str) -> UserInDB | None:
+    return await get_user_store().get_user(username)
+
+
+async def update_user_jira_config(username: str, jira_config: Any) -> UserInDB | None:
+    return await get_user_store().set_jira_config(username, jira_config)
+
+
+async def append_user_api_key(username: str, api_key: StoredAPIKey) -> UserInDB | None:
+    return await get_user_store().add_api_key(username, api_key)
+
+
+async def revoke_user_api_key(username: str, key_id: str) -> bool:
+    return await get_user_store().revoke_api_key(username, key_id)
 
 def get_refresh_token_subject(token: str) -> str:
     payload = _decode_token(token, expected_type="refresh")
@@ -286,7 +275,7 @@ async def get_current_user(request: Request) -> User:
     if not token:
         raise __credentials_exception(reason="No access token provided")
 
-    return _user_from_access_token(token)
+    return await _user_from_access_token(token)
 
 async def get_user_from_api_key(api_key: Optional[str] = Depends(api_key_header)) -> User:
     """
@@ -308,10 +297,9 @@ async def get_user_from_api_key(api_key: Optional[str] = Depends(api_key_header)
         )
     
     # Simple lookup in our in-memory DB
-    for user in USERS_DB.values():
-        for ak in user.api_keys:
-            if verify_secret(api_key, ak.key_hash):
-                return _to_public_user(user)
+    user = await get_user_store().find_user_by_api_key(api_key)
+    if user is not None:
+        return _to_public_user(user)
     
     raise HTTPException(
         status_code=status.HTTP_401_UNAUTHORIZED,
@@ -329,7 +317,7 @@ async def get_any_user(
     token = request.cookies.get(settings.ACCESS_COOKIE_NAME) or _get_bearer_token_from_request(request)
     if token:
         try:
-            return _user_from_access_token(token)
+            return await _user_from_access_token(token)
         except HTTPException:
             if not api_key:
                 raise

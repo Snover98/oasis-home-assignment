@@ -14,6 +14,7 @@ from app.api.auth.router import router as auth_router
 from app.api.endpoints.jira import router as jira_router
 from app.api.jobs.router import router as jobs_router
 from app.api.jobs.router import run_automated_blog_digest
+from app.core.auth import close_user_store
 from app.models.models import HealthResponse
 
 @asynccontextmanager
@@ -33,6 +34,7 @@ async def lifespan(app: FastAPI):
         await background_task
     except asyncio.CancelledError:
         pass
+    await close_user_store()
 
 # Initialize the FastAPI application
 app = FastAPI(

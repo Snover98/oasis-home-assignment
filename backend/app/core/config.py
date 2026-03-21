@@ -26,6 +26,7 @@ class Settings(BaseSettings):
     # Authentication Settings
     SECRET_KEY: str = "" # In production, this must be a strong, random value set in .env
     ALGORITHM: str = "HS256"
+    REDIS_URL: str = "redis://localhost:6379/0"
     ACCESS_TOKEN_EXPIRE_MINUTES: int = 15
     REFRESH_TOKEN_EXPIRE_MINUTES: int = 60 * 24 * 7
     ACCESS_COOKIE_NAME: str = "oasis_access_token"

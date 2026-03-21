@@ -4,7 +4,13 @@ from app.main import app
 from app.core.config import settings
 
 @pytest.mark.asyncio
-async def test_api_keys_flow():
+async def test_api_keys_flow(create_user):
+    await create_user(
+        "testuser",
+        "test@example.com",
+        "password",
+        api_keys=[("Default Key", "oasis_test_key_1")],
+    )
     transport = ASGITransport(app=app)
     async with AsyncClient(transport=transport, base_url="http://test") as ac:
         # 1. Login to establish cookies
@@ -47,7 +53,8 @@ async def test_api_keys_flow():
         assert delete_fail_response.status_code == 404
 
 @pytest.mark.asyncio
-async def test_api_key_write_requires_csrf_for_cookie_auth():
+async def test_api_key_write_requires_csrf_for_cookie_auth(create_user):
+    await create_user("testuser", "test@example.com", "password")
     transport = ASGITransport(app=app)
     async with AsyncClient(transport=transport, base_url="http://test") as ac:
         login_response = await ac.post("/token", data={"username": "testuser", "password": "password"})

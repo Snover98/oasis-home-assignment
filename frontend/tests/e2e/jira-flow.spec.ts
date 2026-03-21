@@ -1,13 +1,36 @@
 import { test, expect } from '@playwright/test';
+import { createUniqueUser } from './helpers/auth';
 
 test.describe('End-to-End Jira Integration Flow', () => {
   test('should register a new user, connect to jira (mocked), and display tickets', async ({ page }) => {
-    // --- Step 1: Register a new user ---
+    const user = createUniqueUser();
+    let jiraConnected = false;
+
+    await page.route('**/api/v1/auth/register', async (route) => {
+      await route.fulfill({ status: 204 });
+    });
+    await page.route('**/api/v1/users/me', async (route) => {
+      await route.fulfill({
+        status: 200,
+        contentType: 'application/json',
+        body: JSON.stringify({
+          username: user.username,
+          email: user.email,
+          jira_config: jiraConnected
+            ? {
+                cloud_id: 'mock_cloud_id',
+                site_url: 'https://mock.jira',
+              }
+            : null,
+          api_keys: [],
+        }),
+      });
+    });
+
     await page.goto('/register');
-    const randomUser = `user_${Math.floor(Math.random() * 10000)}`;
-    await page.fill('input[type="text"]', randomUser);
-    await page.fill('input[type="email"]', `${randomUser}@example.com`);
-    await page.fill('input[type="password"]', 'password123');
+    await page.fill('input[type="text"]', user.username);
+    await page.fill('input[type="email"]', user.email);
+    await page.fill('input[type="password"]', user.password);
     await page.click('button[type="submit"]');
 
     // Should arrive on dashboard with the connection prompt
@@ -15,8 +38,8 @@ test.describe('End-to-End Jira Integration Flow', () => {
     await expect(page.getByRole('heading', { name: 'Jira Connection' })).toBeVisible();
 
     // --- Step 2: Simulate Jira connection (mocking backend calls) ---
-    // We mock the callback response because we can't perform a real OAuth handshake
     await page.route('**/api/v1/jira/auth/callback*', async (route) => {
+      jiraConnected = true;
       await route.fulfill({
         status: 200,
         contentType: 'application/json',
@@ -55,24 +78,6 @@ test.describe('End-to-End Jira Integration Flow', () => {
       });
     });
 
-    // Mock the user profile to include jira_config so the dashboard switches to "MainContent"
-    await page.route('**/api/v1/users/me', async (route) => {
-      await route.fulfill({
-        status: 200,
-        contentType: 'application/json',
-        body: JSON.stringify({
-          username: randomUser,
-          email: `${randomUser}@example.com`,
-          jira_config: {
-            cloud_id: 'mock_cloud_id',
-            site_url: 'https://mock.jira'
-          }
-        }),
-      });
-    });
-
-    // Simulate the redirect back from Atlassian with a code
-    // This triggers the useEffect in Dashboard.tsx that calls jiraAuthCallback
     await page.goto('/dashboard?code=mock_oauth_code');
 
     // --- Step 3: Verify the dashboard shows the connected view and tickets ---

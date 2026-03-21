@@ -19,7 +19,8 @@ async def test_login_fail():
     assert response.status_code == 401
 
 @pytest.mark.asyncio
-async def test_login_success():
+async def test_login_success(create_user):
+    await create_user("testuser", "test@example.com", "password")
     transport = ASGITransport(app=app)
     async with AsyncClient(transport=transport, base_url="http://test") as ac:
         response = await ac.post("/token", data={"username": "testuser", "password": "password"})
@@ -46,7 +47,8 @@ async def test_register_success():
     assert me_response.json()["username"] == "newuser"
 
 @pytest.mark.asyncio
-async def test_refresh_and_logout_flow():
+async def test_refresh_and_logout_flow(create_user):
+    await create_user("testuser", "test@example.com", "password")
     transport = ASGITransport(app=app)
     async with AsyncClient(transport=transport, base_url="http://test") as ac:
         login_response = await ac.post("/token", data={"username": "testuser", "password": "password"})
@@ -64,7 +66,8 @@ async def test_refresh_and_logout_flow():
         assert me_response.status_code == 401
 
 @pytest.mark.asyncio
-async def test_register_duplicate_username():
+async def test_register_duplicate_username(create_user):
+    await create_user("testuser", "test@example.com", "password")
     transport = ASGITransport(app=app)
     async with AsyncClient(transport=transport, base_url="http://test") as ac:
         response = await ac.post(
