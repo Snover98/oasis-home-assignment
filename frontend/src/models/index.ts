@@ -56,6 +56,3 @@ export interface Ticket {
   created: string;
 }
 
-/**
- * Represents the JWT authentication token received upon successful login.
- */

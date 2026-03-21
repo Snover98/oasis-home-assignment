@@ -126,11 +126,6 @@ class UserInDB(BaseModel): # Inherit from BaseModel instead of User
     jira_config: JiraConfig | None = None # These will be composed by the store
     api_keys: list[StoredAPIKey] = Field(default_factory=list) # These will be composed by the store
 
-class Token(BaseModel):
-    """JWT Token response schema."""
-    access_token: str
-    token_type: str
-
 """
 Jira API Response Models (External)
 """
@@ -216,7 +211,7 @@ class SearchParams(BaseModel):
     """Parameters for Jira JQL search."""
     jql: str
     maxResults: int
-    fields: list[str]
+    fields: list[str] = Field(default_factory=list) # Default to empty list
 
 class TextContent(BaseModel):
     """Represents text content in Jira's Document Format (ADF)."""
