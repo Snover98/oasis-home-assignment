@@ -90,7 +90,7 @@ const Dashboard: React.FC = () => {
    * Completes the Jira OAuth 2.0 flow by sending the authorization code to the backend.
    * @param code The authorization code from Atlassian.
    */
-  const handleJiraCallback = useCallback(async (code: string) => {
+  const handleJiraCallback = useCallback(async (code: string, state: string) => {
     // Avoid double-processing the OAuth callback in React StrictMode.
     if (callbackProcessed.current) return;
     callbackProcessed.current = true;
@@ -98,7 +98,7 @@ const Dashboard: React.FC = () => {
     setLoading(true);
     setConnectionError(undefined);
     try {
-      await authApi.jiraAuthCallback(code);
+      await authApi.jiraAuthCallback(code, state);
       // Clean up the callback URL and reload dashboard data.
       navigate('/dashboard', { replace: true });
       await fetchUserData();
@@ -112,8 +112,11 @@ const Dashboard: React.FC = () => {
   useEffect(() => {
     const urlParams = new URLSearchParams(window.location.search);
     const code = urlParams.get('code');
-    if (code) {
-      handleJiraCallback(code);
+    const state = urlParams.get('state');
+    if (code && state) {
+      handleJiraCallback(code, state);
+    } else if (code) {
+      setConnectionError('Failed to complete Jira connection. Please try again.');
     }
   }, [handleJiraCallback]);
 

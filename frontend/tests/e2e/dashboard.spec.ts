@@ -40,4 +40,51 @@ test.describe('Dashboard and Jira Flow', () => {
     await expect(page).toHaveURL('/login');
     expect(await page.evaluate(() => window.localStorage.getItem('token'))).toBeNull();
   });
+
+  test('should not silently recover the session after logout', async ({ page }) => {
+    const user = createUniqueUser();
+    let loggedOut = false;
+
+    await page.route('**/api/v1/users/me', async (route) => {
+      if (loggedOut) {
+        await route.fulfill({
+          status: 401,
+          contentType: 'application/json',
+          body: JSON.stringify({ detail: 'Could not validate credentials' }),
+        });
+        return;
+      }
+
+      await route.fulfill({
+        status: 200,
+        contentType: 'application/json',
+        body: JSON.stringify({
+          username: user.username,
+          email: user.email,
+          jira_config: null,
+          api_keys: [],
+        }),
+      });
+    });
+    await page.route('**/api/v1/auth/logout', async (route) => {
+      loggedOut = true;
+      await route.fulfill({ status: 204 });
+    });
+    await page.route('**/api/v1/auth/refresh', async (route) => {
+      await route.fulfill({
+        status: 401,
+        contentType: 'application/json',
+        body: JSON.stringify({ detail: 'Invalid refresh token' }),
+      });
+    });
+
+    await page.goto('/dashboard');
+    await expect(page).toHaveURL('/dashboard');
+
+    await page.click('button:has-text("Logout")');
+    await expect(page).toHaveURL('/login');
+
+    await page.goto('/dashboard');
+    await expect(page).toHaveURL('/login');
+  });
 });

@@ -3,12 +3,9 @@
  * These interfaces define the shape of data used throughout the application.
  */
 
-/**
- * Configuration for a user's Jira connection established via OAuth 2.0.
- */
-export interface JiraConfig {
-  access_token: string;
-  refresh_token?: string;
+export interface JiraConnectionInfo {
+  connected: boolean;
+  site_url?: string | null;
 }
 
 export interface APIKey {
@@ -27,7 +24,7 @@ export interface APIKeyWithSecret extends APIKey {
 export interface User {
   username: string;
   email: string;
-  jira_config?: JiraConfig;
+  jira_config?: JiraConnectionInfo | null;
   api_keys: APIKey[];
 }
 

@@ -23,16 +23,19 @@ from app.core.auth import (
     clear_auth_cookies,
     get_current_user,
     get_user_record,
-    get_refresh_token_subject,
+    get_user_store,
+    get_refresh_token_claims,
     issue_auth_cookies,
+    is_refresh_session_valid,
     register_user,
     require_csrf_for_cookie_auth,
+    revoke_refresh_session,
     revoke_user_api_key,
     update_user_jira_cache_context,
     update_user_jira_config,
 )
 from app.core.config import settings
-from app.core.security import get_secret_hash
+from app.core.security import get_secret_hash, get_secret_lookup_hash
 from app.models.models import (
     APIKey,
     APIKeyCreate,
@@ -111,7 +114,7 @@ async def register(user_data: UserCreate, response: Response) -> Response:
     except ValueError as e:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(e))
 
-    issue_auth_cookies(response, user_data.username)
+    await issue_auth_cookies(response, user_data.username)
     response.status_code = status.HTTP_204_NO_CONTENT
     return response
 
@@ -137,7 +140,7 @@ async def login_for_access_token(
             headers={"WWW-Authenticate": "Bearer"},
         )
 
-    issue_auth_cookies(response, form_data.username)
+    await issue_auth_cookies(response, form_data.username)
     response.status_code = status.HTTP_204_NO_CONTENT
     return response
 
@@ -151,24 +154,35 @@ async def refresh_auth_session(request: Request, response: Response) -> Response
     if refresh_token is None:
         raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Refresh token is missing")
 
-    username = get_refresh_token_subject(refresh_token)
+    username, session_id = get_refresh_token_claims(refresh_token)
+    if not await is_refresh_session_valid(username, session_id):
+        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Invalid refresh token")
     user = await get_user_record(username)
     if user is None:
         raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Invalid refresh token")
 
-    issue_auth_cookies(response, username)
+    await revoke_refresh_session(session_id)
+    await issue_auth_cookies(response, username)
     response.status_code = status.HTTP_204_NO_CONTENT
     return response
 
 
 @router.post("/api/v1/auth/logout", status_code=status.HTTP_204_NO_CONTENT, tags=["auth"])
 async def logout(
+    request: Request,
     response: Response,
     _: None = Depends(require_csrf_for_cookie_auth),
 ) -> Response:
     """
-    Clears browser auth cookies.
+    Revokes the current refresh session and clears browser auth cookies.
     """
+    refresh_token = request.cookies.get(settings.REFRESH_COOKIE_NAME)
+    if refresh_token:
+        try:
+            _, session_id = get_refresh_token_claims(refresh_token)
+            await revoke_refresh_session(session_id)
+        except HTTPException:
+            pass
     clear_auth_cookies(response)
     response.status_code = status.HTTP_204_NO_CONTENT
     return response
@@ -185,17 +199,34 @@ async def read_users_me(current_user: User = Depends(get_current_user)) -> User:
 @router.get("/api/v1/jira/auth/url", response_model=AuthUrlResponse, tags=["jira-auth"])
 async def get_jira_auth_url(
     request: Request,
+    response: Response,
     current_user: User = Depends(get_current_user),
 ) -> AuthUrlResponse:
     """
     Generates the Atlassian OAuth 2.0 authorization URL for the user to initiate the connection.
     """
+    oauth_state = secrets.token_urlsafe(32)
+    await get_user_store().store_oauth_state(
+        oauth_state,
+        current_user.username,
+        ttl_seconds=settings.JIRA_OAUTH_STATE_TTL_SECONDS,
+    )
+    response.set_cookie(
+        key=settings.JIRA_OAUTH_STATE_COOKIE_NAME,
+        value=oauth_state,
+        max_age=settings.JIRA_OAUTH_STATE_TTL_SECONDS,
+        httponly=True,
+        secure=settings.COOKIE_SECURE,
+        samesite="lax",
+        path="/",
+        domain=settings.COOKIE_DOMAIN,
+    )
     params = {
         "audience": "api.atlassian.com",
         "client_id": settings.JIRA_CLIENT_ID,
         "scope": settings.JIRA_SCOPES,
         "redirect_uri": settings.JIRA_REDIRECT_URI,
-        "state": current_user.username,
+        "state": oauth_state,
         "response_type": "code",
         "prompt": "consent",
     }
@@ -206,7 +237,9 @@ async def get_jira_auth_url(
 @router.post("/api/v1/jira/auth/callback", response_model=AuthCallbackResponse, tags=["jira-auth"])
 async def jira_auth_callback(
     request: Request,
+    response: Response,
     code: str,
+    state: str,
     current_user: User = Depends(get_current_user),
     _: None = Depends(require_csrf_for_cookie_auth),
 ) -> AuthCallbackResponse:
@@ -216,6 +249,12 @@ async def jira_auth_callback(
     """
     if await get_user_record(current_user.username) is None:
         raise HTTPException(status_code=404, detail=f"User {current_user.username} not found")
+    cookie_state = request.cookies.get(settings.JIRA_OAUTH_STATE_COOKIE_NAME)
+    if not state or cookie_state != state:
+        raise HTTPException(status_code=400, detail="Invalid OAuth state")
+    state_username = await get_user_store().pop_oauth_state(state)
+    if state_username != current_user.username:
+        raise HTTPException(status_code=400, detail="Invalid OAuth state")
 
     auth_client = AtlassianAuthClient(base_url="https://auth.atlassian.com")
     try:
@@ -253,6 +292,11 @@ async def jira_auth_callback(
         current_user.username,
         JiraCacheContext(cloud_id=jira_resource.id, site_url=jira_resource.url),
     )
+    response.delete_cookie(
+        key=settings.JIRA_OAUTH_STATE_COOKIE_NAME,
+        path="/",
+        domain=settings.COOKIE_DOMAIN,
+    )
     return AuthCallbackResponse(status="success", site_name=jira_resource.name)
 
 
@@ -279,6 +323,7 @@ async def create_api_key(
         id=str(uuid.uuid4()),
         name=key_data.name,
         key_hash=get_secret_hash(plain_text_key),
+        lookup_hash=get_secret_lookup_hash(plain_text_key),
         created_at=datetime.now(timezone.utc),
         username=current_user.username, # Add username
     )

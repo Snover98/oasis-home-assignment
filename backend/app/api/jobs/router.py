@@ -42,7 +42,8 @@ async def perform_blog_digest(current_user: User, project_key: str, blog_post: B
     Raises:
         HTTPException: If Jira is not connected, scraping fails, or the ticket creation fails.
     """
-    if not current_user.jira_config:
+    user_record = await get_user_record(current_user.username)
+    if user_record is None or not user_record.jira_config:
         raise HTTPException(status_code=400, detail="Jira configuration is missing for this user")
     cache_context = await get_user_store().get_jira_cache_context(current_user.username)
     if cache_context is None:
@@ -59,7 +60,7 @@ async def perform_blog_digest(current_user: User, project_key: str, blog_post: B
     summary = await ai_service.summarize_blog_post(latest_post.title, latest_post.content)
 
     jira_service = JiraService(
-        current_user.jira_config,
+        user_record.jira_config,
         cache_cloud_id=cache_context.cloud_id,
         cache_site_url=cache_context.site_url,
     )
@@ -90,7 +91,7 @@ async def run_automated_blog_digest() -> None:
             current_user = User(
                 username=user_in_db.username,
                 email=user_in_db.email,
-                jira_config=user_in_db.jira_config,
+                jira_config=None,
                 api_keys=[],
             )
 

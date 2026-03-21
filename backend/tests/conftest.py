@@ -14,14 +14,14 @@ from datetime import datetime, timezone
 
 from app.core.config import settings
 from app.core.auth import close_user_store, configure_user_store
-from app.core.security import get_password_hash, get_secret_hash
+from app.core.security import get_password_hash, get_secret_hash, get_secret_lookup_hash
 from app.core.user_store import RedisUserStore
 from app.models.models import JiraCacheContext, StoredAPIKey, JiraConfig
 
 
 @pytest_asyncio.fixture(autouse=True)
 async def fake_user_store():
-    store = RedisUserStore(FakeRedis())
+    store = RedisUserStore(FakeRedis(decode_responses=True))
     configure_user_store(store)
     # Ensure Redis is clean before each test
     await store.redis.flushdb() # Explicitly flush the database
@@ -52,6 +52,7 @@ async def create_user(fake_user_store):
                     id=f"{username}-{name}".replace(" ", "-").lower(),
                     name=name,
                     key_hash=get_secret_hash(plain_key),
+                    lookup_hash=get_secret_lookup_hash(plain_key),
                     created_at=datetime.now(timezone.utc),
                     username=username, # Pass username
                 )
@@ -88,3 +89,8 @@ def fast_jira_retries(monkeypatch):
     monkeypatch.setattr(settings, "JIRA_RETRY_ATTEMPTS", 1) # Only 1 attempt
     monkeypatch.setattr(settings, "JIRA_RETRY_WAIT_MIN", 0.01) # Very short wait
     monkeypatch.setattr(settings, "JIRA_RETRY_WAIT_MAX", 0.01) # Very short wait
+
+
+@pytest.fixture(autouse=True)
+def test_secret_key(monkeypatch):
+    monkeypatch.setattr(settings, "SECRET_KEY", "test-secret-key-with-at-least-32-bytes")

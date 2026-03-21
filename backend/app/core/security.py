@@ -3,6 +3,8 @@ Security utility module for the Oasis NHI Ticket System.
 Provides functions for password hashing and verification using bcrypt.
 """
 
+import hashlib
+
 import bcrypt
 
 def verify_secret(plain_secret: str, hashed_secret: str) -> bool:
@@ -62,3 +64,9 @@ def get_password_hash(password: str) -> str:
         str: The generated bcrypt hash as a string.
     """
     return get_secret_hash(password)
+
+def get_secret_lookup_hash(secret: str) -> str:
+    """
+    Generates a deterministic lookup hash for high-entropy secrets.
+    """
+    return hashlib.sha256(secret.encode('utf-8')).hexdigest()

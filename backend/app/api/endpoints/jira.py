@@ -7,7 +7,7 @@ from fastapi import APIRouter, Depends, HTTPException
 import httpx # Import httpx
 
 from app.models.models import User, Project, Ticket, TicketCreate, FindingCreate, TicketReference, FindingResponse
-from app.core.auth import get_current_user, get_any_user, get_user_store, require_csrf_for_cookie_auth
+from app.core.auth import get_any_user, get_current_user, get_user_record, get_user_store, require_csrf_for_cookie_auth
 from app.services.jira import JiraService
 
 router = APIRouter(tags=["jira"])
@@ -18,10 +18,14 @@ async def _get_jira_service_for_reads(current_user: User) -> JiraService:
     Returns a Jira service for read endpoints.
     Uses live Jira credentials when available and falls back to the stored cache context otherwise.
     """
+    user_record = await get_user_record(current_user.username)
+    if user_record is None:
+        raise HTTPException(status_code=404, detail=f"User {current_user.username} not found")
+
     cache_context = await get_user_store().get_jira_cache_context(current_user.username)
-    if current_user.jira_config:
+    if user_record.jira_config:
         return JiraService(
-            current_user.jira_config,
+            user_record.jira_config,
             cache_cloud_id=cache_context.cloud_id if cache_context else None,
             cache_site_url=cache_context.site_url if cache_context else None,
         )
@@ -41,7 +45,11 @@ async def _get_jira_service_for_writes(current_user: User) -> JiraService:
     Returns a Jira service for write endpoints.
     Writes require both live Jira credentials and cache context for cache invalidation.
     """
-    if not current_user.jira_config:
+    user_record = await get_user_record(current_user.username)
+    if user_record is None:
+        raise HTTPException(status_code=404, detail=f"User {current_user.username} not found")
+
+    if not user_record.jira_config:
         raise HTTPException(status_code=400, detail="Jira not connected")
 
     cache_context = await get_user_store().get_jira_cache_context(current_user.username)
@@ -49,7 +57,7 @@ async def _get_jira_service_for_writes(current_user: User) -> JiraService:
         raise HTTPException(status_code=400, detail="Jira not connected")
 
     return JiraService(
-        current_user.jira_config,
+        user_record.jira_config,
         cache_cloud_id=cache_context.cloud_id,
         cache_site_url=cache_context.site_url,
     )

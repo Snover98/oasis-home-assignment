@@ -23,7 +23,7 @@ from redis.asyncio import Redis, ConnectionPool
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     # Initialize Redis connection pool and user store
-    redis_pool = ConnectionPool.from_url(settings.REDIS_URL)
+    redis_pool = ConnectionPool.from_url(settings.REDIS_URL, decode_responses=True)
     redis_client = Redis(connection_pool=redis_pool)
     await redis_client.ping() # Verify connectivity
     user_store = RedisUserStore(redis_client)

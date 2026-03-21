@@ -33,6 +33,8 @@ class Settings(BaseSettings):
     REFRESH_COOKIE_NAME: str = "oasis_refresh_token"
     CSRF_COOKIE_NAME: str = "oasis_csrf_token"
     CSRF_HEADER_NAME: str = "X-CSRF-Token"
+    JIRA_OAUTH_STATE_COOKIE_NAME: str = "oasis_jira_oauth_state"
+    JIRA_OAUTH_STATE_TTL_SECONDS: int = 600
     COOKIE_SECURE: bool = False
     COOKIE_DOMAIN: str | None = None
 

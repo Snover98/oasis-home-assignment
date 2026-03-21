@@ -123,9 +123,9 @@ export const authApi = {
    * Sends the authorization code back to the server to complete the Jira connection.
    * @param code The OAuth authorization code from Atlassian.
    */
-  jiraAuthCallback: async (code: string): Promise<unknown> => {
+  jiraAuthCallback: async (code: string, state: string): Promise<unknown> => {
     const { data } = await api.post('/api/v1/jira/auth/callback', null, {
-      params: { code }
+      params: { code, state }
     });
     return data;
   },

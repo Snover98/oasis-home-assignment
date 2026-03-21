@@ -1,6 +1,8 @@
 import pytest
 from httpx import AsyncClient, ASGITransport
+
 from app.main import app
+from app.core.auth import get_user_store
 from app.core.config import settings
 
 @pytest.mark.asyncio
@@ -64,3 +66,24 @@ async def test_api_key_write_requires_csrf_for_cookie_auth(create_user):
         create_response = await ac.post("/api/v1/api-keys", json={"name": "Missing CSRF"})
         assert create_response.status_code == 403
         assert create_response.json()["detail"] == "CSRF validation failed"
+
+
+@pytest.mark.asyncio
+async def test_api_key_lookup_uses_indexed_lookup_not_scan(create_user, monkeypatch):
+    await create_user(
+        "testuser",
+        "test@example.com",
+        "password",
+        api_keys=[("Indexed Key", "oasis_test_key_1")],
+    )
+    store = get_user_store()
+
+    async def fail_scan_iter(*args, **kwargs):  # pragma: no cover
+        raise AssertionError("scan_iter should not be used for API key lookup")
+        yield
+
+    monkeypatch.setattr(store.redis, "scan_iter", fail_scan_iter)
+
+    user = await store.find_user_by_api_key("oasis_test_key_1")
+    assert user is not None
+    assert user.username == "testuser"

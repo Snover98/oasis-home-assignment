@@ -18,7 +18,7 @@ test.describe('End-to-End Jira Integration Flow', () => {
           email: user.email,
           jira_config: jiraConnected
             ? {
-                cloud_id: 'mock_cloud_id',
+                connected: true,
                 site_url: 'https://mock.jira',
               }
             : null,
@@ -39,6 +39,8 @@ test.describe('End-to-End Jira Integration Flow', () => {
 
     // --- Step 2: Simulate Jira connection (mocking backend calls) ---
     await page.route('**/api/v1/jira/auth/callback*', async (route) => {
+      const url = new URL(route.request().url());
+      expect(url.searchParams.get('state')).toBe('mock_oauth_state');
       jiraConnected = true;
       await route.fulfill({
         status: 200,
@@ -78,7 +80,7 @@ test.describe('End-to-End Jira Integration Flow', () => {
       });
     });
 
-    await page.goto('/dashboard?code=mock_oauth_code');
+    await page.goto('/dashboard?code=mock_oauth_code&state=mock_oauth_state');
 
     // --- Step 3: Verify the dashboard shows the connected view and tickets ---
     // The "Jira Connection" section should be gone
@@ -100,7 +102,7 @@ test.describe('End-to-End Jira Integration Flow', () => {
     const user = createUniqueUser();
     await mockCurrentUser(page, user, {
       jiraConfig: {
-        cloud_id: 'mock_cloud_id',
+        connected: true,
         site_url: 'https://mock.jira',
       },
     });
@@ -148,7 +150,7 @@ test.describe('End-to-End Jira Integration Flow', () => {
     const user = createUniqueUser();
     await mockCurrentUser(page, user, {
       jiraConfig: {
-        cloud_id: 'mock_cloud_id',
+        connected: true,
         site_url: 'https://mock.jira',
       },
     });
@@ -320,5 +322,15 @@ test.describe('End-to-End Jira Integration Flow', () => {
     await expect(page.locator('text=CACHEB-1')).toBeVisible();
     await expect(page.locator('text=CACHEA-1')).not.toBeVisible();
     await expect(page.locator('h4')).toContainText('Cached Ticket B');
+  });
+
+  test('should reject a Jira callback missing OAuth state', async ({ page }) => {
+    const user = createUniqueUser();
+    await mockCurrentUser(page, user);
+
+    await page.goto('/dashboard?code=mock_oauth_code');
+
+    await expect(page.getByText('Failed to complete Jira connection. Please try again.')).toBeVisible();
+    await expect(page.getByRole('heading', { name: 'Jira Connection' })).toBeVisible();
   });
 });

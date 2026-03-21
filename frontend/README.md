@@ -9,6 +9,8 @@ This is the React + TypeScript + Vite frontend for the Oasis NHI Ticket System.
 From the repository root:
 
 ```bash
+cp backend/.env.example backend/.env
+cp frontend/.env.example frontend/.env
 docker compose up --build
 ```
 
@@ -20,6 +22,7 @@ From the `frontend` directory:
 
 ```bash
 npm install
+cp .env.example .env
 npm run dev
 ```
 

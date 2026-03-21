@@ -19,6 +19,7 @@ class APIKeyWithSecret(APIKey):
 class StoredAPIKey(APIKey):
     """Internal representation of an API key stored by hash only."""
     key_hash: str
+    lookup_hash: str | None = None
     username: str
 
 class APIKeyCreate(BaseModel):
@@ -33,6 +34,11 @@ class JiraConfig(BaseModel):
 class JiraCacheContext(BaseModel):
     """Minimal Jira metadata required to address cached resources after disconnect."""
     cloud_id: str
+    site_url: str | None = None
+
+class JiraConnectionInfo(BaseModel):
+    """Public-safe Jira connection state returned to the frontend."""
+    connected: bool = True
     site_url: str | None = None
 
 class Project(BaseModel):
@@ -112,7 +118,7 @@ class User(BaseModel):
     """Represents a user in the system (public profile)."""
     username: str
     email: str
-    jira_config: JiraConfig | None = None
+    jira_config: JiraConnectionInfo | None = None
     api_keys: list[APIKey] = Field(default_factory=list)
 
 class UserCreate(BaseModel):

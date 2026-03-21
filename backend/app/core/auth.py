@@ -9,8 +9,8 @@ import secrets
 from datetime import datetime, timedelta, timezone
 from fastapi import Depends, HTTPException, Request, Response, status
 from fastapi.security import APIKeyHeader
-from app.models.models import JiraCacheContext, User, UserInDB, UserCreate, APIKey, StoredAPIKey
-from app.core.security import verify_password, get_password_hash, get_secret_hash
+from app.models.models import JiraCacheContext, JiraConnectionInfo, User, UserInDB, UserCreate, APIKey, StoredAPIKey
+from app.core.security import verify_password, get_password_hash, get_secret_hash, get_secret_lookup_hash
 from app.core.config import settings
 from typing import Any, Optional
 from app.core.user_store import RedisUserStore
@@ -31,11 +31,19 @@ def _to_public_api_key(api_key: StoredAPIKey) -> APIKey:
         created_at=api_key.created_at,
     )
 
-def _to_public_user(user: UserInDB) -> User:
+async def _to_public_user(user: UserInDB) -> User:
+    cache_context = await get_user_store().get_jira_cache_context(user.username)
     return User(
         username=user.username,
         email=user.email,
-        jira_config=user.jira_config,
+        jira_config=(
+            JiraConnectionInfo(
+                connected=True,
+                site_url=cache_context.site_url if cache_context else None,
+            )
+            if user.jira_config
+            else None
+        ),
         api_keys=[_to_public_api_key(api_key) for api_key in user.api_keys],
     )
 
@@ -70,7 +78,7 @@ async def authenticate_user(username: str, password: str) -> User | None:
     if user is None or not verify_password(password, user.password_hash):
         return None
     
-    return _to_public_user(user)
+    return await _to_public_user(user)
 
 async def register_user(user_data: UserCreate) -> User:
     """
@@ -94,7 +102,7 @@ async def register_user(user_data: UserCreate) -> User:
         password_hash=get_password_hash(user_data.password),
     )
 
-    return _to_public_user(new_user)
+    return await _to_public_user(new_user)
 
 def create_access_token(data: dict[str, Any], expires_delta: timedelta) -> str:
     """
@@ -120,6 +128,9 @@ def create_refresh_token(data: dict[str, Any], expires_delta: timedelta) -> str:
     Creates a JWT refresh token for a user.
     """
     return create_access_token(data=data, expires_delta=expires_delta)
+
+def create_refresh_session_id() -> str:
+    return secrets.token_urlsafe(32)
 
 def create_csrf_token() -> str:
     """
@@ -186,6 +197,7 @@ def clear_auth_cookies(response: Response) -> None:
         settings.ACCESS_COOKIE_NAME,
         settings.REFRESH_COOKIE_NAME,
         settings.CSRF_COOKIE_NAME,
+        settings.JIRA_OAUTH_STATE_COOKIE_NAME,
     ):
         response.delete_cookie(
             key=cookie_name,
@@ -193,16 +205,22 @@ def clear_auth_cookies(response: Response) -> None:
             domain=settings.COOKIE_DOMAIN,
         )
 
-def issue_auth_cookies(response: Response, username: str) -> None:
+async def issue_auth_cookies(response: Response, username: str, session_id: str | None = None) -> None:
     access_token_expires = timedelta(minutes=settings.ACCESS_TOKEN_EXPIRE_MINUTES)
     refresh_token_expires = timedelta(minutes=settings.REFRESH_TOKEN_EXPIRE_MINUTES)
+    refresh_session_id = session_id or create_refresh_session_id()
     access_token = create_access_token(
         data={"sub": username, "type": "access"},
         expires_delta=access_token_expires,
     )
     refresh_token = create_refresh_token(
-        data={"sub": username, "type": "refresh"},
+        data={"sub": username, "type": "refresh", "sid": refresh_session_id},
         expires_delta=refresh_token_expires,
+    )
+    await get_user_store().create_refresh_session(
+        refresh_session_id,
+        username,
+        ttl_seconds=settings.REFRESH_TOKEN_EXPIRE_MINUTES * 60,
     )
     set_auth_cookies(
         response=response,
@@ -210,6 +228,15 @@ def issue_auth_cookies(response: Response, username: str) -> None:
         refresh_token=refresh_token,
         csrf_token=create_csrf_token(),
     )
+
+
+async def is_refresh_session_valid(username: str, session_id: str) -> bool:
+    stored_username = await get_user_store().get_refresh_session_username(session_id)
+    return stored_username == username
+
+
+async def revoke_refresh_session(session_id: str) -> None:
+    await get_user_store().revoke_refresh_session(session_id)
 
 async def _user_from_access_token(token: str) -> User:
     payload = _decode_token(token, expected_type="access")
@@ -221,7 +248,7 @@ async def _user_from_access_token(token: str) -> User:
     if user is None:
         raise __credentials_exception(reason=f"User {username} not found")
 
-    return _to_public_user(user)
+    return await _to_public_user(user)
 
 
 async def get_user_record(username: str) -> UserInDB | None:
@@ -243,12 +270,19 @@ async def append_user_api_key(username: str, api_key: StoredAPIKey) -> UserInDB 
 async def revoke_user_api_key(username: str, key_id: str) -> bool:
     return await get_user_store().revoke_api_key(username, key_id)
 
-def get_refresh_token_subject(token: str) -> str:
+def get_refresh_token_claims(token: str) -> tuple[str, str]:
     payload = _decode_token(token, expected_type="refresh")
     username: str | None = payload.get("sub")
+    session_id: str | None = payload.get("sid")
     if username is None:
         raise __credentials_exception(reason="Invalid username in payload")
+    if session_id is None:
+        raise __credentials_exception(reason="Invalid session in payload")
 
+    return username, session_id
+
+def get_refresh_token_subject(token: str) -> str:
+    username, _ = get_refresh_token_claims(token)
     return username
 
 def __credentials_exception(reason: str = '') -> HTTPException:
@@ -304,7 +338,7 @@ async def get_user_from_api_key(api_key: Optional[str] = Depends(api_key_header)
     # Simple lookup in our in-memory DB
     user = await get_user_store().find_user_by_api_key(api_key)
     if user is not None:
-        return _to_public_user(user)
+        return await _to_public_user(user)
     
     raise HTTPException(
         status_code=status.HTTP_401_UNAUTHORIZED,

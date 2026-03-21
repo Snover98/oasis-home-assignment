@@ -60,6 +60,8 @@ An automated background process (Trigger/Scheduled) that:
 
 From the repository root:
 ```bash
+cp backend/.env.example backend/.env
+cp frontend/.env.example frontend/.env
 docker compose up --build
 ```
 
@@ -86,6 +88,7 @@ Backend:
 ```bash
 cd backend
 uv sync
+cp .env.example .env
 uv run --env-file .env uvicorn app.main:app --host 0.0.0.0 --port 8000 --reload
 ```
 
@@ -93,6 +96,7 @@ Frontend:
 ```bash
 cd frontend
 npm install
+cp .env.example .env
 npm run dev
 ```
 
