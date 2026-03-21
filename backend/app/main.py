@@ -14,27 +14,35 @@ from app.api.auth.router import router as auth_router
 from app.api.endpoints.jira import router as jira_router
 from app.api.jobs.router import router as jobs_router
 from app.api.jobs.router import run_automated_blog_digest
-from app.core.auth import close_user_store
+from app.core.auth import configure_user_store, close_user_store
+from app.core.user_store import RedisUserStore
+from app.core.config import settings
 from app.models.models import HealthResponse
+from redis.asyncio import Redis, ConnectionPool
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    """
-    Lifespan event manager that handles startup and shutdown logic.
-    Starts the automated background job for blog digests.
-    """
+    # Initialize Redis connection pool and user store
+    redis_pool = ConnectionPool.from_url(settings.REDIS_URL)
+    redis_client = Redis(connection_pool=redis_pool)
+    await redis_client.ping() # Verify connectivity
+    user_store = RedisUserStore(redis_client)
+    configure_user_store(user_store)
+    print("Redis and UserStore initialized.")
+
     # Create the background task for the automated blog digest job
     background_task = asyncio.create_task(run_automated_blog_digest())
     
     yield
     
-    # Clean up the background task on shutdown
+    # Clean up on shutdown
     background_task.cancel()
     try:
         await background_task
     except asyncio.CancelledError:
         pass
-    await close_user_store()
+    await close_user_store() # This will close redis_client and its pool
+    print("Redis and UserStore shut down.")
 
 # Initialize the FastAPI application
 app = FastAPI(

@@ -15,7 +15,11 @@ from app.core.config import settings
 from typing import Any, Optional
 from app.core.user_store import RedisUserStore
 
-_user_store: RedisUserStore | None = None
+class _UserStoreContainer:
+    def __init__(self):
+        self.instance: RedisUserStore | None = None
+
+_user_store_container = _UserStoreContainer()
 
 # API Key scheme for programmatic access
 api_key_header = APIKeyHeader(name="X-API-Key", auto_error=False)
@@ -36,22 +40,19 @@ def _to_public_user(user: UserInDB) -> User:
     )
 
 def configure_user_store(user_store: RedisUserStore) -> None:
-    global _user_store
-    _user_store = user_store
+    _user_store_container.instance = user_store
 
 
 def get_user_store() -> RedisUserStore:
-    global _user_store
-    if _user_store is None:
-        _user_store = RedisUserStore.from_url(settings.REDIS_URL)
-    return _user_store
+    if _user_store_container.instance is None:
+        raise RuntimeError("RedisUserStore not initialized. Ensure it's configured during app lifespan.")
+    return _user_store_container.instance
 
 
 async def close_user_store() -> None:
-    global _user_store
-    if _user_store is not None:
-        await _user_store.close()
-        _user_store = None
+    if _user_store_container.instance is not None:
+        await _user_store_container.instance.close()
+        _user_store_container.instance = None
 
 
 async def authenticate_user(username: str, password: str) -> User | None:
