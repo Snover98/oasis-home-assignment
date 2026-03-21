@@ -2,7 +2,7 @@ import pytest
 from httpx import AsyncClient, ASGITransport
 from unittest.mock import AsyncMock, patch, ANY
 from app.main import app
-from app.models.models import JiraConfig, Ticket, TicketReference, UserInDB, CreatedIssueResponse, JiraSearchResultsResponse
+from app.models.models import JiraConfig, Project, Ticket, TicketReference, UserInDB, CreatedIssueResponse, JiraSearchResultsResponse
 from app.core.user_store import RedisUserStore
 from datetime import datetime, timezone
 import httpx
@@ -25,6 +25,190 @@ def mock_jira_service_deps(mock_user_store):
     mock_api_client = AsyncMock(spec=JiraAPIClient) # Mock the instance directly
     with patch("app.services.jira.JiraAPIClient", return_value=mock_api_client):
         yield mock_user_store, mock_api_client # Yield the directly mocked instance
+
+@pytest.mark.asyncio
+async def test_get_jira_projects_live_success_caches_result(create_user, mock_jira_service_deps):
+    mock_user_store, mock_api_client = mock_jira_service_deps
+
+    await create_user(
+        "testuser",
+        "test@example.com",
+        "password",
+        jira_config=JiraConfig(access_token="fake_token", cloud_id="fake_cloud_id")
+    )
+
+    mock_api_client.get_projects.return_value = [
+        Project(id="10000", key="PROJA", name="Project A"),
+        Project(id="10001", key="PROJB", name="Project B"),
+    ]
+
+    transport = ASGITransport(app=app)
+    async with AsyncClient(transport=transport, base_url="http://test") as ac:
+        await ac.post("/token", data={"username": "testuser", "password": "password"})
+        response = await ac.get("/api/v1/jira/projects")
+
+    assert response.status_code == 200
+    assert [project["key"] for project in response.json()] == ["PROJA", "PROJB"]
+    mock_api_client.get_projects.assert_called_once()
+    mock_user_store.get_jira_projects_cache.assert_not_called()
+    mock_user_store.save_jira_projects_cache.assert_called_once_with(
+        "fake_cloud_id",
+        [
+            Project(id="10000", key="PROJA", name="Project A"),
+            Project(id="10001", key="PROJB", name="Project B"),
+        ],
+        ttl=settings.JIRA_CACHE_TTL,
+    )
+
+@pytest.mark.asyncio
+async def test_get_jira_projects_jira_failure_cache_fallback(create_user, mock_jira_service_deps):
+    mock_user_store, mock_api_client = mock_jira_service_deps
+
+    await create_user(
+        "testuser",
+        "test@example.com",
+        "password",
+        jira_config=JiraConfig(access_token="fake_token", cloud_id="fake_cloud_id")
+    )
+
+    mock_api_client.get_projects.side_effect = httpx.NetworkError("Jira is down")
+    cached_projects = [
+        Project(id="10000", key="PROJA", name="Project A"),
+        Project(id="10001", key="PROJB", name="Project B"),
+    ]
+    mock_user_store.get_jira_projects_cache.return_value = cached_projects
+
+    transport = ASGITransport(app=app)
+    async with AsyncClient(transport=transport, base_url="http://test") as ac:
+        await ac.post("/token", data={"username": "testuser", "password": "password"})
+        response = await ac.get("/api/v1/jira/projects")
+
+    assert response.status_code == 200
+    assert [project["key"] for project in response.json()] == ["PROJA", "PROJB"]
+    assert mock_api_client.get_projects.call_count == 3
+    mock_user_store.get_jira_projects_cache.assert_called_once_with("fake_cloud_id")
+    mock_user_store.save_jira_projects_cache.assert_not_called()
+
+@pytest.mark.asyncio
+async def test_get_jira_projects_jira_failure_no_cache(create_user, mock_user_store):
+    await create_user(
+        "testuser",
+        "test@example.com",
+        "password",
+        jira_config=JiraConfig(access_token="fake_token", cloud_id="fake_cloud_id")
+    )
+
+    mock_user_store.get_jira_projects_cache.return_value = None
+
+    with patch("app.services.jira.JiraService._get_projects_from_jira") as mock_internal_projects_fetch:
+        mock_internal_projects_fetch.side_effect = RetryError("Simulated Jira failure after retries.")
+
+        transport = ASGITransport(app=app)
+        async with AsyncClient(transport=transport, base_url="http://test") as ac:
+            await ac.post("/token", data={"username": "testuser", "password": "password"})
+            response = await ac.get("/api/v1/jira/projects")
+
+    assert response.status_code == 503
+    assert "Failed to connect to Jira API after multiple retries. No cached projects available." in response.json()["detail"]
+    mock_internal_projects_fetch.assert_called_once()
+    mock_user_store.get_jira_projects_cache.assert_called_once_with("fake_cloud_id")
+    mock_user_store.save_jira_projects_cache.assert_not_called()
+
+@pytest.mark.asyncio
+async def test_get_jira_projects_cache_per_cloud_id(create_user, mock_jira_service_deps):
+    mock_user_store, mock_api_client = mock_jira_service_deps
+
+    await create_user(
+        "testuser",
+        "test@example.com",
+        "password",
+        jira_config=JiraConfig(access_token="fake_token", cloud_id="fake_cloud_id")
+    )
+
+    mock_api_client.get_projects.return_value = [Project(id="10000", key="PROJA", name="Project A")]
+
+    transport = ASGITransport(app=app)
+    async with AsyncClient(transport=transport, base_url="http://test") as ac:
+        await ac.post("/token", data={"username": "testuser", "password": "password"})
+        response = await ac.get("/api/v1/jira/projects")
+
+    assert response.status_code == 200
+    mock_user_store.save_jira_projects_cache.assert_called_once_with(
+        "fake_cloud_id",
+        [Project(id="10000", key="PROJA", name="Project A")],
+        ttl=settings.JIRA_CACHE_TTL,
+    )
+
+@pytest.mark.asyncio
+async def test_cached_projects_enable_cached_ticket_failover(create_user, mock_jira_service_deps):
+    mock_user_store, mock_api_client = mock_jira_service_deps
+
+    await create_user(
+        "testuser",
+        "test@example.com",
+        "password",
+        jira_config=JiraConfig(access_token="fake_token", cloud_id="fake_cloud_id")
+    )
+
+    live_projects = [Project(id="10000", key="PROJA", name="Project A")]
+    live_tickets = JiraSearchResultsResponse.model_validate({
+        "issues": [
+            {
+                "id": "1",
+                "key": "PROJA-1",
+                "self": "jira_url_1",
+                "fields": {
+                    "summary": "Ticket A",
+                    "status": {"name": "Open"},
+                    "priority": {"name": "High"},
+                    "issuetype": {"name": "Task"},
+                    "created": datetime.now(timezone.utc).isoformat(),
+                },
+            }
+        ]
+    })
+
+    mock_api_client.get_projects.return_value = live_projects
+    mock_api_client.search_tickets.return_value = live_tickets
+
+    transport = ASGITransport(app=app)
+    async with AsyncClient(transport=transport, base_url="http://test") as ac:
+        await ac.post("/token", data={"username": "testuser", "password": "password"})
+
+        projects_response = await ac.get("/api/v1/jira/projects")
+        tickets_response = await ac.get("/api/v1/jira/tickets/recent?project_key=PROJA")
+
+        assert projects_response.status_code == 200
+        assert tickets_response.status_code == 200
+
+        mock_user_store.reset_mock()
+        mock_api_client.reset_mock()
+
+        mock_api_client.get_projects.side_effect = httpx.NetworkError("Jira is down")
+        mock_api_client.search_tickets.side_effect = httpx.NetworkError("Jira is down")
+        mock_user_store.get_jira_projects_cache.return_value = live_projects
+        mock_user_store.get_jira_tickets_cache.return_value = [
+            Ticket(
+                id="1",
+                key="PROJA-1",
+                self="url",
+                summary="Ticket A",
+                status="Open",
+                priority="High",
+                issuetype="Task",
+                created=datetime.now(timezone.utc),
+            )
+        ]
+
+        cached_projects_response = await ac.get("/api/v1/jira/projects")
+        cached_tickets_response = await ac.get("/api/v1/jira/tickets/recent?project_key=PROJA")
+
+    assert cached_projects_response.status_code == 200
+    assert cached_projects_response.json()[0]["key"] == "PROJA"
+    assert cached_tickets_response.status_code == 200
+    assert cached_tickets_response.json()[0]["key"] == "PROJA-1"
+    mock_user_store.get_jira_projects_cache.assert_called_once_with("fake_cloud_id")
+    mock_user_store.get_jira_tickets_cache.assert_called_once_with("fake_cloud_id", "PROJA")
 
 @pytest.mark.asyncio
 async def test_get_recent_jira_tickets_cache_hit(create_user, mock_jira_service_deps):

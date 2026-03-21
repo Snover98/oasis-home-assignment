@@ -11,7 +11,7 @@ from redis.asyncio import Redis
 
 import json
 from app.core.security import get_secret_hash, verify_secret
-from app.models.models import JiraConfig, StoredAPIKey, UserInDB, UserCore, Ticket
+from app.models.models import JiraConfig, Project, StoredAPIKey, UserInDB, UserCore, Ticket
 
 
 class RedisUserStore:
@@ -41,6 +41,10 @@ class RedisUserStore:
     @staticmethod
     def _jira_tickets_cache_key(cloud_id: str, project_key: str) -> str:
         return f"jira:{cloud_id}:{project_key}:latest_tickets"
+
+    @staticmethod
+    def _jira_projects_cache_key(cloud_id: str) -> str:
+        return f"jira:{cloud_id}:projects"
 
     async def close(self) -> None:
         await self.redis.aclose()
@@ -146,3 +150,14 @@ class RedisUserStore:
     async def invalidate_jira_tickets_cache(self, cloud_id: str, project_key: str) -> None:
         key = self._jira_tickets_cache_key(cloud_id, project_key)
         await self.redis.delete(key)
+
+    async def save_jira_projects_cache(self, cloud_id: str, projects: list[Project], ttl: int = 300) -> None:
+        key = self._jira_projects_cache_key(cloud_id)
+        await self.redis.set(key, json.dumps([p.model_dump(mode='json') for p in projects]), ex=ttl)
+
+    async def get_jira_projects_cache(self, cloud_id: str) -> list[Project] | None:
+        key = self._jira_projects_cache_key(cloud_id)
+        cached_data = await self.redis.get(key)
+        if cached_data:
+            return [Project.model_validate(item) for item in json.loads(cached_data)]
+        return None

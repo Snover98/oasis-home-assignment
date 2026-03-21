@@ -88,15 +88,58 @@ class JiraService:
         before_sleep=tenacity.before_sleep_log(logger, logging.INFO),
         retry=tenacity.retry_if_exception_type((httpx.NetworkError, httpx.TimeoutException))
     )
+    async def _get_projects_from_jira(self) -> list[Project]:
+        """Internal helper to fetch projects from Jira with retry logic."""
+        projects = await self.api.get_projects()
+        return [Project(id=p.id, key=p.key, name=p.name) for p in projects]
+
     async def get_projects(self) -> list[Project]:
         """
-        Fetches all projects from the connected Jira workspace and maps them to internal models.
+        Fetches projects from Jira first and falls back to cached results on failure.
 
         Returns:
             list[Project]: A list of simplified Project models.
         """
-        projects = await self.api.get_projects()
-        return [Project(id=p.id, key=p.key, name=p.name) for p in projects]
+        cloud_id = self.config.cloud_id
+        if not cloud_id:
+            raise HTTPException(status_code=500, detail="Jira Cloud ID missing for caching operations.")
+
+        try:
+            projects = await self._get_projects_from_jira()
+            await self.user_store.save_jira_projects_cache(
+                cloud_id,
+                projects,
+                ttl=settings.JIRA_CACHE_TTL,
+            )
+            logger.info("Fetched and cached Jira projects.")
+            return projects
+        except tenacity.RetryError as e:
+            logger.warning(
+                "Jira API _get_projects_from_jira failed after multiple retries. "
+                f"Attempting to retrieve project cache. Error: {e}"
+            )
+            cached_projects = await self.user_store.get_jira_projects_cache(cloud_id)
+            if cached_projects:
+                logger.info("Returning cached Jira projects due to Jira failure.")
+                return cached_projects
+            logger.error("Jira API failed and no cached projects are available.")
+            raise HTTPException(status_code=503, detail="Failed to connect to Jira API after multiple retries. No cached projects available.")
+        except HTTPException as e:
+            logger.error(f"Jira API _get_projects_from_jira failed: {e.detail}. Attempting to retrieve project cache.")
+            cached_projects = await self.user_store.get_jira_projects_cache(cloud_id)
+            if cached_projects:
+                logger.info("Returning cached Jira projects due to Jira failure.")
+                return cached_projects
+            logger.error("Jira API failed and no cached projects are available.")
+            raise HTTPException(status_code=e.status_code, detail=f"Jira API call failed: {e.detail}. No cached projects available.")
+        except Exception as e:
+            logger.error(f"An unexpected error occurred while fetching Jira projects: {e}. Attempting to retrieve project cache.")
+            cached_projects = await self.user_store.get_jira_projects_cache(cloud_id)
+            if cached_projects:
+                logger.info("Returning cached Jira projects due to unexpected error.")
+                return cached_projects
+            logger.error("An unexpected error occurred and no cached projects are available.")
+            raise HTTPException(status_code=500, detail="An unexpected error occurred while fetching Jira projects. No cached projects available.")
 
     @tenacity.retry(
         wait=tenacity.wait_exponential(multiplier=1, min=settings.JIRA_RETRY_WAIT_MIN, max=settings.JIRA_RETRY_WAIT_MAX),

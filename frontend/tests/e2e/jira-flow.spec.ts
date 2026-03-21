@@ -1,5 +1,5 @@
 import { test, expect } from '@playwright/test';
-import { createUniqueUser } from './helpers/auth';
+import { createUniqueUser, mockCurrentUser } from './helpers/auth';
 
 test.describe('End-to-End Jira Integration Flow', () => {
   test('should register a new user, connect to jira (mocked), and display tickets', async ({ page }) => {
@@ -94,5 +94,120 @@ test.describe('End-to-End Jira Integration Flow', () => {
     await expect(page.getByRole('heading', { name: 'Recent Tickets' })).toBeVisible();
     await expect(page.locator('h4')).toContainText('My Automated Test Ticket');
     await expect(page.locator('text=TEST-1')).toBeVisible();
+  });
+
+  test('should render cached projects and cached tickets during Jira failover', async ({ page }) => {
+    const user = createUniqueUser();
+    await mockCurrentUser(page, user, {
+      jiraConfig: {
+        cloud_id: 'mock_cloud_id',
+        site_url: 'https://mock.jira',
+      },
+    });
+
+    await page.route('**/api/v1/jira/projects', async (route) => {
+      await route.fulfill({
+        status: 200,
+        contentType: 'application/json',
+        body: JSON.stringify([
+          { id: '10000', key: 'CACHED', name: 'Cached Project' },
+        ]),
+      });
+    });
+
+    await page.route('**/api/v1/jira/tickets/recent*', async (route) => {
+      await route.fulfill({
+        status: 200,
+        contentType: 'application/json',
+        body: JSON.stringify([
+          {
+            id: '20101',
+            key: 'CACHED-1',
+            summary: 'Cached Jira Ticket',
+            status: 'To Do',
+            priority: 'Medium',
+            issuetype: 'Task',
+            created: new Date().toISOString(),
+            self: 'https://mock.jira/CACHED-1'
+          }
+        ]),
+      });
+    });
+
+    await page.goto('/dashboard');
+
+    await expect(page).toHaveURL('/dashboard');
+    await expect(page.getByRole('heading', { name: 'Report NHI Finding' })).toBeVisible();
+    await expect(page.locator('select')).toContainText('Cached Project (CACHED)');
+    await expect(page.getByRole('heading', { name: 'Recent Tickets' })).toBeVisible();
+    await expect(page.locator('h4')).toContainText('Cached Jira Ticket');
+    await expect(page.locator('text=CACHED-1')).toBeVisible();
+  });
+
+  test('should allow selecting a cached project and load its cached tickets during failover', async ({ page }) => {
+    const user = createUniqueUser();
+    await mockCurrentUser(page, user, {
+      jiraConfig: {
+        cloud_id: 'mock_cloud_id',
+        site_url: 'https://mock.jira',
+      },
+    });
+
+    await page.route('**/api/v1/jira/projects', async (route) => {
+      await route.fulfill({
+        status: 200,
+        contentType: 'application/json',
+        body: JSON.stringify([
+          { id: '10000', key: 'CACHEA', name: 'Cached Project A' },
+          { id: '10001', key: 'CACHEB', name: 'Cached Project B' },
+        ]),
+      });
+    });
+
+    await page.route('**/api/v1/jira/tickets/recent*', async (route) => {
+      const projectKey = new URL(route.request().url()).searchParams.get('project_key');
+      const ticketsByProject = {
+        CACHEA: [
+          {
+            id: '30101',
+            key: 'CACHEA-1',
+            summary: 'Cached Ticket A',
+            status: 'To Do',
+            priority: 'Low',
+            issuetype: 'Task',
+            created: new Date().toISOString(),
+            self: 'https://mock.jira/CACHEA-1'
+          }
+        ],
+        CACHEB: [
+          {
+            id: '30102',
+            key: 'CACHEB-1',
+            summary: 'Cached Ticket B',
+            status: 'Done',
+            priority: 'High',
+            issuetype: 'Bug',
+            created: new Date().toISOString(),
+            self: 'https://mock.jira/CACHEB-1'
+          }
+        ],
+      };
+
+      await route.fulfill({
+        status: 200,
+        contentType: 'application/json',
+        body: JSON.stringify(ticketsByProject[projectKey as keyof typeof ticketsByProject] ?? []),
+      });
+    });
+
+    await page.goto('/dashboard');
+
+    await expect(page.locator('select')).toContainText('Cached Project A (CACHEA)');
+    await expect(page.locator('text=CACHEA-1')).toBeVisible();
+
+    await page.selectOption('select', 'CACHEB');
+
+    await expect(page.locator('text=CACHEB-1')).toBeVisible();
+    await expect(page.locator('h4')).toContainText('Cached Ticket B');
   });
 });

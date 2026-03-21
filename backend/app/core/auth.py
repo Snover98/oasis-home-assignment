@@ -12,7 +12,7 @@ from fastapi.security import APIKeyHeader
 from app.models.models import User, UserInDB, UserCreate, APIKey, StoredAPIKey
 from app.core.security import verify_password, get_password_hash, get_secret_hash
 from app.core.config import settings
-from typing import Any
+from typing import Any, Optional
 from app.core.user_store import RedisUserStore
 
 class _UserStoreContainer:
