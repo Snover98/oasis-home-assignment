@@ -30,6 +30,7 @@ const Dashboard: React.FC = () => {
   const [loading, setLoading] = useState(false);
   const [connectionError, setConnectionError] = useState<string | undefined>(undefined);
   const [findingError, setFindingError] = useState<string | undefined>(undefined);
+  const [recentTicketsError, setRecentTicketsError] = useState<string | undefined>(undefined);
   
   // Controls visibility of the Jira connection settings panel
   const [showConfig, setShowConfig] = useState(false);
@@ -131,11 +132,13 @@ const Dashboard: React.FC = () => {
    */
   const fetchRecentTickets = useCallback(async () => {
     if (!selectedProject) return;
+    setRecentTicketsError(undefined); // Clear previous error
     try {
       const tickets = await jiraApi.getRecentTickets(selectedProject);
       setRecentTickets(tickets);
-    } catch {
-      console.error('Failed to fetch recent tickets');
+    } catch (err: unknown) {
+      console.error('Failed to fetch recent tickets:', err);
+      setRecentTicketsError('Failed to fetch recent tickets. Please check your Jira connection or project key.');
     }
   }, [selectedProject]);
 
@@ -256,6 +259,7 @@ const Dashboard: React.FC = () => {
           loading={loading}
           findingError={findingError}
           recentTickets={recentTickets}
+          recentTicketsError={recentTicketsError}
           handleCreateTicket={handleCreateTicket}
           handleTriggerBlogDigest={handleTriggerBlogDigest}
           fetchRecentTickets={fetchRecentTickets}

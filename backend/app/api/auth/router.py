@@ -276,6 +276,7 @@ async def create_api_key(
         name=key_data.name,
         key_hash=get_secret_hash(plain_text_key),
         created_at=datetime.now(timezone.utc),
+        username=current_user.username, # Add username
     )
 
     user_in_db = await append_user_api_key(current_user.username, stored_key)

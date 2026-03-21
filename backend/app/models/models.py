@@ -19,6 +19,7 @@ class APIKeyWithSecret(APIKey):
 class StoredAPIKey(APIKey):
     """Internal representation of an API key stored by hash only."""
     key_hash: str
+    username: str
 
 class APIKeyCreate(BaseModel):
     """Request schema for creating a new API key."""
@@ -99,6 +100,11 @@ class BlogPost(BaseModel):
     url: str
     content: str
 
+class UserCore(BaseModel):
+    username: str
+    email: str
+    password_hash: str
+
 class User(BaseModel):
     """Represents a user in the system (public profile)."""
     username: str
@@ -112,10 +118,13 @@ class UserCreate(BaseModel):
     email: str
     password: str
 
-class UserInDB(User):
+class UserInDB(BaseModel): # Inherit from BaseModel instead of User
     """Internal representation of a user stored in the database."""
+    username: str
+    email: str
     password_hash: str
-    api_keys: list[StoredAPIKey] = Field(default_factory=list)
+    jira_config: JiraConfig | None = None # These will be composed by the store
+    api_keys: list[StoredAPIKey] = Field(default_factory=list) # These will be composed by the store
 
 class Token(BaseModel):
     """JWT Token response schema."""

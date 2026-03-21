@@ -13,6 +13,7 @@ export interface MainContentProps {
   loading: boolean;
   findingError?: string;
   recentTickets: Ticket[];
+  recentTicketsError?: string;
   handleCreateTicket: (e: React.FormEvent) => Promise<void>;
   handleTriggerBlogDigest: () => Promise<void>;
   fetchRecentTickets: () => Promise<void>;
@@ -29,6 +30,7 @@ const MainContent: React.FC<MainContentProps> = ({
   loading,
   findingError,
   recentTickets,
+  recentTicketsError,
   handleCreateTicket,
   handleTriggerBlogDigest,
   fetchRecentTickets,
@@ -121,7 +123,9 @@ const MainContent: React.FC<MainContentProps> = ({
             </button>
           </div>
           <div style={{ display: 'flex', flexDirection: 'column', gap: '1rem' }}>
-            {recentTickets.length === 0 ? (
+            {recentTicketsError ? ( // Added conditional rendering for error
+              <p style={{ color: 'red', textAlign: 'center', marginTop: '2rem' }}>{recentTicketsError}</p>
+            ) : recentTickets.length === 0 ? (
               <p style={{ color: '#999', textAlign: 'center', marginTop: '2rem' }}>No tickets found for this project.</p>
             ) : (
               recentTickets.map((ticket) => (

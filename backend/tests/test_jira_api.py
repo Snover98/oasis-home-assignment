@@ -25,11 +25,12 @@ async def test_report_finding_with_api_key(mock_jira_service, create_user):
         api_keys=[("Default Key", "oasis_test_key_1")],
     )
     user_store = get_user_store()
-    user.jira_config = JiraConfig(
+    jira_config = JiraConfig(
         access_token="fake_token",
         cloud_id="fake_cloud_id"
     )
-    await user_store.save_user(user)
+    # Use set_jira_config to update the Jira config
+    await user_store.set_jira_config(user.username, jira_config)
 
     transport = ASGITransport(app=app)
     async with AsyncClient(transport=transport, base_url="http://test") as ac:
@@ -93,10 +94,12 @@ async def test_report_finding_no_jira_connected(create_user):
         api_keys=[("Default Key", "oasis_test_key_2")],
     )
     user_store = get_user_store()
+    # To simulate no Jira connected, explicitly set JiraConfig to None
+    await user_store.set_jira_config("testuser2", None)
+    # We should re-fetch the user to get the updated state
     user = await user_store.get_user("testuser2")
     assert user is not None
-    user.jira_config = None
-    await user_store.save_user(user)
+    assert user.jira_config is None
 
     transport = ASGITransport(app=app)
     async with AsyncClient(transport=transport, base_url="http://test") as ac:

@@ -21,7 +21,7 @@ class Settings(BaseSettings):
     ATLASSIAN_TOKEN_URL: str = "https://auth.atlassian.com/oauth/token"
     
     # Required scopes for Jira 3LO to access work items and user data
-    JIRA_SCOPES: str = "read:jira-work write:jira-work read:jira-user"
+    JIRA_SCOPES: str = "read:jira-work write:jira-work read:jira-user offline_access"
 
     # Authentication Settings
     SECRET_KEY: str = "" # In production, this must be a strong, random value set in .env
@@ -46,6 +46,14 @@ class Settings(BaseSettings):
     AUTO_BLOG_DIGEST_USER: str = "testuser"
     AUTO_BLOG_DIGEST_PROJECT_KEY: str = "NHI" # Default project key for automated tickets
     AUTO_BLOG_DIGEST_INTERVAL_SECONDS: int = 3600 # 1 hour
+
+    # Jira Retry Settings
+    JIRA_RETRY_ATTEMPTS: int = 3
+    JIRA_RETRY_WAIT_MIN: int = 2 # seconds
+    JIRA_RETRY_WAIT_MAX: int = 10 # seconds
+
+    # Jira Cache Settings
+    JIRA_CACHE_TTL: int = 300 # seconds (5 minutes)
 
 # Global settings instance
 settings = Settings()

@@ -4,6 +4,7 @@ Provides endpoints for project retrieval, ticket creation, and search.
 """
 
 from fastapi import APIRouter, Depends, HTTPException
+import httpx # Import httpx
 
 from app.models.models import User, Project, Ticket, TicketCreate, FindingCreate, TicketReference, FindingResponse
 from app.core.auth import get_current_user, get_any_user, require_csrf_for_cookie_auth
@@ -29,7 +30,12 @@ async def get_jira_projects(current_user: User = Depends(get_current_user)) -> l
         raise HTTPException(status_code=400, detail="Jira not connected")
     
     jira_service = JiraService(current_user.jira_config)
-    return await jira_service.get_projects()
+    try:
+        return await jira_service.get_projects()
+    except HTTPException as e:
+        raise e
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"An unexpected error occurred: {str(e)}")
 
 @router.post("/api/v1/jira/tickets", response_model=TicketReference)
 async def create_jira_ticket(
@@ -54,11 +60,18 @@ async def create_jira_ticket(
         raise HTTPException(status_code=400, detail="Jira not connected")
     
     jira_service = JiraService(current_user.jira_config)
-    return await jira_service.create_ticket(
-        project_key=ticket_data.project_key,
-        summary=ticket_data.summary,
-        description=ticket_data.description
-    )
+    try:
+        return await jira_service.create_ticket(
+            project_key=ticket_data.project_key,
+            summary=ticket_data.summary,
+            description=ticket_data.description
+        )
+    except httpx.HTTPStatusError as e: # Catch HTTPStatusError specifically
+        raise HTTPException(status_code=e.response.status_code, detail=f"Jira API error: {e.response.text}")
+    except HTTPException as e:
+        raise e
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"An unexpected error occurred: {str(e)}")
 
 @router.get("/api/v1/jira/tickets/recent", response_model=list[Ticket])
 async def get_recent_jira_tickets(
@@ -82,7 +95,12 @@ async def get_recent_jira_tickets(
         raise HTTPException(status_code=400, detail="Jira not connected")
     
     jira_service = JiraService(current_user.jira_config)
-    return await jira_service.get_recent_tickets(project_key=project_key)
+    try:
+        return await jira_service.get_recent_tickets(project_key=project_key)
+    except HTTPException as e:
+        raise e # Re-raise exceptions from JiraService
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"An unexpected error occurred: {str(e)}")
 
 @router.post("/api/v1/findings", response_model=FindingResponse)
 async def report_finding(
@@ -114,7 +132,7 @@ async def report_finding(
             description=finding.description
         )
         return FindingResponse(status="success", ticket=result)
-    except HTTPException as e:
+    except HTTPException as e: # Catch and re-raise exceptions from JiraService
         raise e
-    except Exception as e:
-        raise HTTPException(status_code=500, detail=str(e))
+    except Exception as e: # Catch any other unexpected exceptions
+        raise HTTPException(status_code=500, detail=f"An unexpected error occurred: {str(e)}")
