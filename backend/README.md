@@ -4,6 +4,16 @@ This is the FastAPI backend for the Oasis NHI Ticket System.
 
 ## Running the Application
 
+### Development (Docker Compose)
+
+From the repository root:
+
+```bash
+docker compose up --build
+```
+
+The backend will be available on `http://localhost:8000` and will connect to the compose-managed Redis service.
+
 ### Development (CLI)
 
 To run the application using `uv` and automatically load the environment variables from your `.env` file, use the following command from the `backend` directory:

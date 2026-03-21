@@ -53,23 +53,47 @@ An automated background process (Trigger/Scheduled) that:
 ## Getting Started
 
 ### Prerequisites
-- **Python 3.13+** with the [uv](https://docs.astral.sh/uv/) package manager.
-- **Node.js** and **npm**.
+- **Docker** with the `docker compose` plugin.
+- Optional for non-container local runs: **Python 3.13+** with [uv](https://docs.astral.sh/uv/), **Node.js**, and **npm**.
 
 ### Running the Project
 
-#### 1. Backend
-Navigate to the `backend` directory and run:
+#### 1. Full Stack with Docker Compose
+From the repository root, run:
 ```bash
+docker compose up --build
+```
+
+This starts:
+- frontend on `http://localhost:5173`
+- backend on `http://localhost:8000`
+- redis on `localhost:6379`
+
+To stop the stack:
+```bash
+docker compose down
+```
+
+To stop and remove Redis-backed state:
+```bash
+docker compose down -v
+```
+
+#### 2. Legacy Local Run
+
+Backend:
+```bash
+cd backend
 uv sync
 uv run --env-file .env uvicorn app.main:app --host 0.0.0.0 --port 8000 --reload
 ```
 
-#### 2. Frontend
-Navigate to the `frontend` directory and run:
+Frontend:
 ```bash
-npm install && npm run dev
+cd frontend
+npm install
+npm run dev
 ```
 
-
+For local non-Docker runs, Redis must still be available at `redis://localhost:6379/0` unless `REDIS_URL` is overridden.
 
